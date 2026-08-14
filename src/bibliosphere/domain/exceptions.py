@@ -36,3 +36,7 @@ class MemberNotFound(BibliosphereError):
 
 class LoanNotFound(BibliosphereError):
     """Raised when a referenced loan does not exist."""
+
+
+class LoanAlreadyReturned(BibliosphereError):
+    """Raised when attempting to return a loan that has already been returned."""

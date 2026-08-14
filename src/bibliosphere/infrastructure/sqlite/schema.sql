@@ -41,9 +41,13 @@ CREATE TABLE IF NOT EXISTS authors (
     name TEXT NOT NULL UNIQUE
 );
 
+-- Follows data/migration/v2__author.sql (legacy `biblio_author` table). `level`
+-- is the author's order/rank on this bibliography (1 = main author, higher =
+-- additional/co-author); no lookup table for level values yet, plain integer.
 CREATE TABLE IF NOT EXISTS bibliography_authors (
     bibliography_id INTEGER NOT NULL REFERENCES bibliographies (id),
     author_id INTEGER NOT NULL REFERENCES authors (id),
+    level INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (bibliography_id, author_id)
 );
 

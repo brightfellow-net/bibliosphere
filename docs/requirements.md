@@ -85,7 +85,7 @@ See [Section 7](#7-out-of-scope--future-considerations) for the full deferred li
 Member       (id, name, ..., role: librarian | patron)
 Author       (id, name)
 Bibliography (id, isbn_issn, title, sor, edition, publish_year, ...)
-BibliographyAuthor (bibliography_id -> Bibliography, author_id -> Author)
+BibliographyAuthor (bibliography_id -> Bibliography, author_id -> Author, level)
 Item         (id, bibliography_id -> Bibliography,
               item_status: available | checked_out)
 Loan         (id, item_id -> Item, member_id -> Member,
@@ -94,7 +94,9 @@ Loan         (id, item_id -> Item, member_id -> Member,
 
 - A **Bibliography** (title-level record) has many **Items** (1:many).
 - A **Bibliography** has many **Authors**, and an **Author** may be credited on
-  many Bibliographies (many-to-many, via `BibliographyAuthor`).
+  many Bibliographies (many-to-many, via `BibliographyAuthor`). `level` records
+  each author's order/rank on that bibliography (1 = main author, higher =
+  additional/co-author).
 - A **Loan** links one **Item** to one **Member** with checkout/due/return
   dates; an item is `checked_out` while it has an open loan (no `return_date`).
 

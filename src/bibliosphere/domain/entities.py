@@ -25,6 +25,18 @@ class Author:
 
 
 @dataclass
+class BibliographyAuthor:
+    """An Author credited on a Bibliography, with their author-order level
+
+    (1 = main author, higher = additional/co-author) — see biblio_author.level
+    in data/migration/v2__author.sql.
+    """
+
+    author: Author
+    level: int = 1
+
+
+@dataclass
 class Bibliography:
     id: int | None
     title: str

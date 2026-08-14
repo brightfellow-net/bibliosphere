@@ -2,12 +2,22 @@ from datetime import date, timedelta
 
 import pytest
 
-from bibliosphere.domain.entities import Author, Bibliography, Loan, Member, Role
+from bibliosphere.application.use_cases.add_bibliography import AddBibliography
+from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
+from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Loan, Member, Role
 from bibliosphere.infrastructure.sqlite.author_repository import SqliteAuthorRepository
 from bibliosphere.infrastructure.sqlite.bibliography_repository import SqliteBibliographyRepository
 from bibliosphere.infrastructure.sqlite.connection import connect, init_schema
 from bibliosphere.infrastructure.sqlite.loan_repository import SqliteLoanRepository
 from bibliosphere.infrastructure.sqlite.member_repository import SqliteMemberRepository
+from bibliosphere.infrastructure.sqlite.unit_of_work import SqliteUnitOfWork
+
+
+class _FailingAuthorRepository:
+    """Always fails author lookup, to force a mid-transaction error in tests."""
+
+    def find_or_create_by_name(self, name: str) -> Author:
+        raise RuntimeError("simulated author-lookup failure")
 
 
 @pytest.fixture
@@ -28,14 +38,61 @@ def test_bibliography_repository_round_trip(conn):
     assert repo.search("Dune") == [added]
 
     herbert = authors.add(Author(id=None, name="Herbert"))
-    repo.set_authors(added.id, [herbert.id])
-    assert repo.list_authors(added.id) == [herbert]
+    anderson = authors.add(Author(id=None, name="Anderson"))
+    repo.set_authors(added.id, [herbert.id, anderson.id])
+    assert repo.list_authors(added.id) == [
+        BibliographyAuthor(author=herbert, level=1),
+        BibliographyAuthor(author=anderson, level=2),
+    ]
     assert repo.search("Herbert") == [added]
 
     item = repo.add_item(added.id)
     assert repo.list_items(added.id) == [item]
     repo.remove_item(item.id)
     assert repo.get_item(item.id) is None
+
+
+def test_uow_rolls_back_all_writes_on_failure(conn):
+    repo = SqliteBibliographyRepository(conn)
+    uow = SqliteUnitOfWork(conn)
+
+    with pytest.raises(RuntimeError):
+        with uow:
+            repo.add(Bibliography(id=None, title="Ghost"))
+            raise RuntimeError("simulated failure mid-transaction")
+
+    assert repo.list_all() == []
+
+
+def test_add_bibliography_rolls_back_on_author_failure(conn):
+    bibliographies = SqliteBibliographyRepository(conn)
+    uow = SqliteUnitOfWork(conn)
+    use_case = AddBibliography(bibliographies, _FailingAuthorRepository(), uow)
+
+    with pytest.raises(RuntimeError):
+        use_case.execute(title="Ghost", authors=["Someone"])
+
+    # The bibliography insert that happened before the failure must not have leaked.
+    assert bibliographies.list_all() == []
+
+
+def test_edit_bibliography_rolls_back_partial_update_on_failure(conn):
+    bibliographies = SqliteBibliographyRepository(conn)
+    authors = SqliteAuthorRepository(conn)
+    uow = SqliteUnitOfWork(conn)
+
+    added = AddBibliography(bibliographies, authors, uow).execute(
+        title="Original", authors=["Real Author"], isbn_issn="111"
+    )
+
+    edit_use_case = EditBibliography(bibliographies, _FailingAuthorRepository(), uow)
+    with pytest.raises(RuntimeError):
+        edit_use_case.execute(added.id, title="Edited Title", authors=["X"], isbn_issn="111")
+
+    # The title UPDATE that happened before the failure must not have leaked either.
+    reloaded = bibliographies.get_by_id(added.id)
+    assert reloaded.title == "Original"
+    assert [c.author.name for c in bibliographies.list_authors(added.id)] == ["Real Author"]
 
 
 def test_member_repository_round_trip(conn):

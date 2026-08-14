@@ -1,12 +1,18 @@
 from bibliosphere.domain.entities import Bibliography
 from bibliosphere.domain.exceptions import BibliographyNotFound, DuplicateIsbn
-from bibliosphere.domain.ports import AuthorRepository, BibliographyRepository
+from bibliosphere.domain.ports import AuthorRepository, BibliographyRepository, UnitOfWork
 
 
 class EditBibliography:
-    def __init__(self, bibliography_repository: BibliographyRepository, author_repository: AuthorRepository):
+    def __init__(
+        self,
+        bibliography_repository: BibliographyRepository,
+        author_repository: AuthorRepository,
+        unit_of_work: UnitOfWork,
+    ):
         self._bibliographies = bibliography_repository
         self._authors = author_repository
+        self._uow = unit_of_work
 
     def execute(
         self,
@@ -59,9 +65,11 @@ class EditBibliography:
             media_type_id=media_type_id,
             carrier_type_id=carrier_type_id,
         )
-        self._bibliographies.update(updated)
+        with self._uow:
+            self._bibliographies.update(updated)
 
-        author_ids = [self._authors.find_or_create_by_name(name).id for name in authors]
-        self._bibliographies.set_authors(bibliography_id, author_ids)
+            unique_authors = list(dict.fromkeys(authors))
+            author_ids = [self._authors.find_or_create_by_name(name).id for name in unique_authors]
+            self._bibliographies.set_authors(bibliography_id, author_ids)
 
         return updated

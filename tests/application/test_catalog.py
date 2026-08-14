@@ -8,36 +8,38 @@ from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.domain.exceptions import BibliographyNotFound, DuplicateIsbn, ItemNotAvailable, ItemNotFound
 
 
-def test_add_bibliography(bibliography_repo, author_repo):
-    use_case = AddBibliography(bibliography_repo, author_repo)
+def test_add_bibliography(bibliography_repo, author_repo, unit_of_work):
+    use_case = AddBibliography(bibliography_repo, author_repo, unit_of_work)
     result = use_case.execute(title="Clean Architecture", authors=["Robert C. Martin"], isbn_issn="978-0-13-468599-1")
     assert result.id is not None
     assert bibliography_repo.get_by_isbn("978-0-13-468599-1") == result
-    assert [a.name for a in bibliography_repo.list_authors(result.id)] == ["Robert C. Martin"]
+    assert [c.author.name for c in bibliography_repo.list_authors(result.id)] == ["Robert C. Martin"]
 
 
-def test_add_bibliography_rejects_duplicate_isbn(bibliography_repo, author_repo):
-    use_case = AddBibliography(bibliography_repo, author_repo)
+def test_add_bibliography_rejects_duplicate_isbn(bibliography_repo, author_repo, unit_of_work):
+    use_case = AddBibliography(bibliography_repo, author_repo, unit_of_work)
     use_case.execute(title="A", authors=["X"], isbn_issn="123")
     with pytest.raises(DuplicateIsbn):
         use_case.execute(title="B", authors=["Y"], isbn_issn="123")
 
 
-def test_edit_bibliography(bibliography_repo, author_repo):
-    added = AddBibliography(bibliography_repo, author_repo).execute(title="A", authors=["X"], isbn_issn="123")
-    use_case = EditBibliography(bibliography_repo, author_repo)
+def test_edit_bibliography(bibliography_repo, author_repo, unit_of_work):
+    added = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="A", authors=["X"], isbn_issn="123"
+    )
+    use_case = EditBibliography(bibliography_repo, author_repo, unit_of_work)
     updated = use_case.execute(added.id, title="A2", authors=["X"], isbn_issn="123")
     assert updated.title == "A2"
 
 
-def test_edit_bibliography_missing_raises(bibliography_repo, author_repo):
-    use_case = EditBibliography(bibliography_repo, author_repo)
+def test_edit_bibliography_missing_raises(bibliography_repo, author_repo, unit_of_work):
+    use_case = EditBibliography(bibliography_repo, author_repo, unit_of_work)
     with pytest.raises(BibliographyNotFound):
         use_case.execute(999, title="A", authors=["X"], isbn_issn="123")
 
 
-def test_add_and_remove_item(bibliography_repo, author_repo, loan_repo):
-    bibliography = AddBibliography(bibliography_repo, author_repo).execute(
+def test_add_and_remove_item(bibliography_repo, author_repo, unit_of_work, loan_repo):
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         title="A", authors=["X"], isbn_issn="123"
     )
     item = AddItem(bibliography_repo).execute(bibliography.id)
@@ -52,8 +54,8 @@ def test_remove_missing_item_raises(bibliography_repo, loan_repo):
         RemoveItem(bibliography_repo, loan_repo).execute(999)
 
 
-def test_search_catalog_reports_availability(bibliography_repo, author_repo, loan_repo):
-    bibliography = AddBibliography(bibliography_repo, author_repo).execute(
+def test_search_catalog_reports_availability(bibliography_repo, author_repo, unit_of_work, loan_repo):
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         title="Dune", authors=["Herbert"], isbn_issn="123"
     )
     AddItem(bibliography_repo).execute(bibliography.id)
@@ -64,7 +66,7 @@ def test_search_catalog_reports_availability(bibliography_repo, author_repo, loa
     assert entry.available_items == 2
 
 
-def test_search_catalog_empty_query_lists_all(bibliography_repo, author_repo, loan_repo):
-    AddBibliography(bibliography_repo, author_repo).execute(title="A", authors=["X"], isbn_issn="1")
-    AddBibliography(bibliography_repo, author_repo).execute(title="B", authors=["Y"], isbn_issn="2")
+def test_search_catalog_empty_query_lists_all(bibliography_repo, author_repo, unit_of_work, loan_repo):
+    AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(title="A", authors=["X"], isbn_issn="1")
+    AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(title="B", authors=["Y"], isbn_issn="2")
     assert len(SearchCatalog(bibliography_repo, loan_repo).execute("")) == 2

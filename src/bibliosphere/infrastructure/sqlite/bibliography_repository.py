@@ -1,6 +1,6 @@
 import sqlite3
 
-from bibliosphere.domain.entities import Author, Bibliography, Item
+from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item
 
 _UPDATABLE_COLUMNS = (
     "title",
@@ -28,22 +28,24 @@ class SqliteBibliographyRepository:
         self._conn = connection
 
     def add(self, bibliography: Bibliography) -> Bibliography:
+        # No commit here: this is called from use cases (AddBibliography) that also
+        # link authors in the same logical operation, and control the transaction
+        # boundary themselves via UnitOfWork.
         columns = ", ".join(_UPDATABLE_COLUMNS)
         placeholders = ", ".join("?" for _ in _UPDATABLE_COLUMNS)
         values = tuple(getattr(bibliography, column) for column in _UPDATABLE_COLUMNS)
         cursor = self._conn.execute(
             f"INSERT INTO bibliographies ({columns}) VALUES ({placeholders})", values
         )
-        self._conn.commit()
         return self.get_by_id(cursor.lastrowid)
 
     def update(self, bibliography: Bibliography) -> None:
+        # No commit here — see add()'s note; EditBibliography controls the transaction.
         assignments = ", ".join(f"{column} = ?" for column in _UPDATABLE_COLUMNS)
         values = tuple(getattr(bibliography, column) for column in _UPDATABLE_COLUMNS)
         self._conn.execute(
             f"UPDATE bibliographies SET {assignments} WHERE id = ?", (*values, bibliography.id)
         )
-        self._conn.commit()
 
     def get_by_id(self, bibliography_id: int) -> Bibliography | None:
         row = self._conn.execute("SELECT * FROM bibliographies WHERE id = ?", (bibliography_id,)).fetchone()
@@ -89,24 +91,27 @@ class SqliteBibliographyRepository:
         return [Item(id=row["id"], bibliography_id=row["bibliography_id"]) for row in rows]
 
     def set_authors(self, bibliography_id: int, author_ids: list[int]) -> None:
+        # No commit here — see add()'s note; the calling use case controls the transaction.
+        unique_ids = list(dict.fromkeys(author_ids))
         self._conn.execute("DELETE FROM bibliography_authors WHERE bibliography_id = ?", (bibliography_id,))
         self._conn.executemany(
-            "INSERT INTO bibliography_authors (bibliography_id, author_id) VALUES (?, ?)",
-            [(bibliography_id, author_id) for author_id in author_ids],
+            "INSERT INTO bibliography_authors (bibliography_id, author_id, level) VALUES (?, ?, ?)",
+            [(bibliography_id, author_id, level) for level, author_id in enumerate(unique_ids, start=1)],
         )
-        self._conn.commit()
 
-    def list_authors(self, bibliography_id: int) -> list[Author]:
+    def list_authors(self, bibliography_id: int) -> list[BibliographyAuthor]:
         rows = self._conn.execute(
             """
-            SELECT a.* FROM authors a
+            SELECT a.id, a.name, ba.level FROM authors a
             JOIN bibliography_authors ba ON ba.author_id = a.id
             WHERE ba.bibliography_id = ?
-            ORDER BY a.name
+            ORDER BY ba.level, a.name
             """,
             (bibliography_id,),
         ).fetchall()
-        return [Author(id=row["id"], name=row["name"]) for row in rows]
+        return [
+            BibliographyAuthor(author=Author(id=row["id"], name=row["name"]), level=row["level"]) for row in rows
+        ]
 
     @staticmethod
     def _row_to_bibliography(row: sqlite3.Row) -> Bibliography:

@@ -8,8 +8,9 @@ class SqliteAuthorRepository:
         self._conn = connection
 
     def add(self, author: Author) -> Author:
+        # No commit here: only called (via find_or_create_by_name) from AddBibliography/
+        # EditBibliography, which control the transaction boundary via UnitOfWork.
         cursor = self._conn.execute("INSERT INTO authors (name) VALUES (?)", (author.name,))
-        self._conn.commit()
         return Author(id=cursor.lastrowid, name=author.name)
 
     def get_by_id(self, author_id: int) -> Author | None:

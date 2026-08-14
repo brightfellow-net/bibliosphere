@@ -11,7 +11,7 @@ standalone master data, so their own CRUD lives on AuthorRepository instead
 
 from typing import Protocol
 
-from bibliosphere.domain.entities import Author, Bibliography, Item, Loan, Member
+from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
 
 
 class BibliographyRepository(Protocol):
@@ -27,8 +27,10 @@ class BibliographyRepository(Protocol):
     def get_item(self, item_id: int) -> Item | None: ...
     def list_items(self, bibliography_id: int) -> list[Item]: ...
 
+    # author_ids order is preserved as the stored author level (1-based).
     def set_authors(self, bibliography_id: int, author_ids: list[int]) -> None: ...
-    def list_authors(self, bibliography_id: int) -> list[Author]: ...
+    # Returns credits ordered by level.
+    def list_authors(self, bibliography_id: int) -> list[BibliographyAuthor]: ...
 
 
 class AuthorRepository(Protocol):
@@ -55,3 +57,17 @@ class LoanRepository(Protocol):
     def list_open_loans_for_member(self, member_id: int) -> list[Loan]: ...
     def list_all_open_loans(self) -> list[Loan]: ...
     def count_open_loans_for_member(self, member_id: int) -> int: ...
+
+
+class UnitOfWork(Protocol):
+    """Groups a use case's repository writes into one atomic transaction.
+
+    For use cases with more than one write (e.g. AddBibliography creating a
+    bibliography and then linking authors), wrapping the sequence in `with
+    unit_of_work:` commits once at the end, or rolls back everything if any
+    step raises — instead of each repository call committing independently,
+    which can leave committed-but-incomplete state on a mid-sequence failure.
+    """
+
+    def __enter__(self) -> "UnitOfWork": ...
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object) -> None: ...

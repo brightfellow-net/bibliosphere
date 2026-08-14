@@ -1,6 +1,12 @@
 import pytest
 
-from tests.fakes import FakeAuthorRepository, FakeBibliographyRepository, FakeLoanRepository, FakeMemberRepository
+from tests.fakes import (
+    FakeAuthorRepository,
+    FakeBibliographyRepository,
+    FakeLoanRepository,
+    FakeMemberRepository,
+    FakeUnitOfWork,
+)
 
 
 @pytest.fixture
@@ -11,6 +17,11 @@ def author_repo():
 @pytest.fixture
 def bibliography_repo(author_repo):
     return FakeBibliographyRepository(author_repo)
+
+
+@pytest.fixture
+def unit_of_work():
+    return FakeUnitOfWork()
 
 
 @pytest.fixture

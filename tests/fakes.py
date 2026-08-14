@@ -6,7 +6,7 @@ See docs/architecture.md "Testing implication".
 from dataclasses import replace
 from itertools import count
 
-from bibliosphere.domain.entities import Author, Bibliography, Item, Loan, Member
+from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
 
 
 class FakeBibliographyRepository:
@@ -41,7 +41,7 @@ class FakeBibliographyRepository:
         query = query.lower()
 
         def matches(bibliography: Bibliography) -> bool:
-            author_names = " ".join(author.name for author in self.list_authors(bibliography.id))
+            author_names = " ".join(credit.author.name for credit in self.list_authors(bibliography.id))
             haystack = f"{bibliography.title} {bibliography.isbn_issn or ''} {author_names}".lower()
             return query in haystack
 
@@ -66,13 +66,18 @@ class FakeBibliographyRepository:
         return [item for item in self._items.values() if item.bibliography_id == bibliography_id]
 
     def set_authors(self, bibliography_id: int, author_ids: list[int]) -> None:
-        self._author_ids[bibliography_id] = list(author_ids)
+        self._author_ids[bibliography_id] = list(dict.fromkeys(author_ids))
 
-    def list_authors(self, bibliography_id: int) -> list[Author]:
+    def list_authors(self, bibliography_id: int) -> list[BibliographyAuthor]:
         if self._authors_repo is None:
             return []
         ids = self._author_ids.get(bibliography_id, [])
-        return [author for author in (self._authors_repo.get_by_id(i) for i in ids) if author is not None]
+        credits = []
+        for level, author_id in enumerate(ids, start=1):
+            author = self._authors_repo.get_by_id(author_id)
+            if author is not None:
+                credits.append(BibliographyAuthor(author=author, level=level))
+        return credits
 
 
 class FakeAuthorRepository:
@@ -100,6 +105,19 @@ class FakeAuthorRepository:
         if existing is not None:
             return existing
         return self.add(Author(id=None, name=name))
+
+
+class FakeUnitOfWork:
+    """No-op: fakes mutate plain dicts, so each write is already atomic and there's
+    no uncommitted/partial state to roll back — unlike SqliteUnitOfWork, which
+    guards against a real multi-statement SQL transaction being left half-applied.
+    """
+
+    def __enter__(self) -> "FakeUnitOfWork":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        pass
 
 
 class FakeMemberRepository:

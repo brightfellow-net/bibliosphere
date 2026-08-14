@@ -12,9 +12,9 @@ from bibliosphere.domain.entities import Role
 _isbn_counter = count(100)
 
 
-def _make_bibliography_with_items(bibliography_repo, author_repo, n_items=1):
+def _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=1):
     isbn = f"isbn-{next(_isbn_counter)}"
-    bibliography = AddBibliography(bibliography_repo, author_repo).execute(
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         isbn_issn=isbn, title="Dune", authors=["Herbert"]
     )
     for _ in range(n_items):
@@ -30,8 +30,8 @@ def test_list_members(member_repo):
     assert {m.username for m in members} == {"alice", "bob"}
 
 
-def test_list_open_loans_across_all_members(bibliography_repo, author_repo, member_repo, loan_repo):
-    bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, n_items=2)
+def test_list_open_loans_across_all_members(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
+    bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=2)
     alice = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
     bob = CreateMember(member_repo).execute("bob", "Bob", "pw", Role.PATRON)
     checkout = CheckoutItem(bibliography_repo, member_repo, loan_repo)

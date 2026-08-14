@@ -2,7 +2,7 @@ from dataclasses import replace
 from datetime import date
 
 from bibliosphere.domain.entities import Loan
-from bibliosphere.domain.exceptions import LoanNotFound
+from bibliosphere.domain.exceptions import LoanAlreadyReturned, LoanNotFound
 from bibliosphere.domain.ports import LoanRepository
 
 
@@ -14,6 +14,8 @@ class ReturnItem:
         loan = self._loans.get_by_id(loan_id)
         if loan is None:
             raise LoanNotFound(f"No loan with id {loan_id}")
+        if not loan.is_open:
+            raise LoanAlreadyReturned(f"Loan {loan_id} was already returned on {loan.return_date}")
 
         returned = replace(loan, return_date=date.today())
         self._loans.update(returned)

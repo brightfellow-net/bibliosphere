@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from bibliosphere.domain.entities import Author, Bibliography, Item, Loan
+from bibliosphere.domain.entities import Bibliography, BibliographyAuthor, Item, Loan
 
 
 @dataclass
@@ -14,12 +14,12 @@ class CatalogEntry:
     """A bibliography plus its authors and items' derived availability, for display."""
 
     bibliography: Bibliography
-    authors: list[Author]
+    authors: list[BibliographyAuthor]
     items: list[ItemStatus]
 
     @property
     def author_names(self) -> str:
-        return ", ".join(author.name for author in self.authors)
+        return ", ".join(credit.author.name for credit in self.authors)
 
     @property
     def total_items(self) -> int:

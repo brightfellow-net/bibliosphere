@@ -56,4 +56,10 @@ class MainWindow(QMainWindow):
             my_loans = MyLoansView(uc.list_member_loans, member.id)
             tabs.addTab(my_loans, "My Loans")
 
+        # Each tab's own view already refreshes itself on construction; this catches it
+        # back up on every subsequent switch, since actions in one tab (e.g. adding a
+        # bibliography in Catalog) don't otherwise reach the other tabs' cached state
+        # (e.g. Checkout's bibliography dropdown).
+        tabs.currentChanged.connect(lambda index: tabs.widget(index).refresh())
+
         return tabs

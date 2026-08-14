@@ -24,6 +24,7 @@ from bibliosphere.infrastructure.sqlite.bibliography_repository import SqliteBib
 from bibliosphere.infrastructure.sqlite.connection import connect, init_schema
 from bibliosphere.infrastructure.sqlite.loan_repository import SqliteLoanRepository
 from bibliosphere.infrastructure.sqlite.member_repository import SqliteMemberRepository
+from bibliosphere.infrastructure.sqlite.unit_of_work import SqliteUnitOfWork
 from bibliosphere.presentation.qt.main_window import MainWindow
 
 DB_PATH = Path(__file__).parent / "data" / "bibliosphere.db"
@@ -38,12 +39,13 @@ def build_use_cases(db_path: Path) -> UseCases:
     authors = SqliteAuthorRepository(connection)
     members = SqliteMemberRepository(connection)
     loans = SqliteLoanRepository(connection)
+    bibliography_uow = SqliteUnitOfWork(connection)
 
     return UseCases(
         authenticate_user=AuthenticateUser(members),
         search_catalog=SearchCatalog(bibliographies, loans),
-        add_bibliography=AddBibliography(bibliographies, authors),
-        edit_bibliography=EditBibliography(bibliographies, authors),
+        add_bibliography=AddBibliography(bibliographies, authors, bibliography_uow),
+        edit_bibliography=EditBibliography(bibliographies, authors, bibliography_uow),
         add_item=AddItem(bibliographies),
         remove_item=RemoveItem(bibliographies, loans),
         list_members=ListMembers(members),
