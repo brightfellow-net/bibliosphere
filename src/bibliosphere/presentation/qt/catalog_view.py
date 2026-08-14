@@ -161,9 +161,10 @@ class CatalogView(QWidget):
     def _on_add_bibliography(self) -> None:
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
         dialog = AddBibliographyDialog(self._add_bibliography, all_author_names, self)
+        dialog.bibliography_added.connect(self._on_bibliography_added)
         dialog.exec()
-        if not dialog.any_added:
-            return
+
+    def _on_bibliography_added(self) -> None:
         # Otherwise a leftover filter can hide the just-added bibliography with no
         # feedback that anything happened, inviting an accidental duplicate re-add.
         for box in self._column_filters:

@@ -1,3 +1,4 @@
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -21,12 +22,14 @@ class AddBibliographyDialog(QDialog):
     retried) from within the dialog itself:
 
     - Invalid input: shows the error and stays open with the fields as entered.
-    - Valid input: adds the bibliography, then clears the fields and stays open so a
-      librarian can keep entering books back-to-back without reopening the dialog.
+    - Valid input: adds the bibliography, emits `bibliography_added` so the caller can
+      refresh immediately, then clears the fields and stays open so a librarian can
+      keep entering books back-to-back without reopening the dialog.
 
-    Only Cancel (or closing the window) ends the dialog; `any_added` tells the caller
-    whether to refresh, since a successful add no longer shows up as an accepted exec().
+    Only Cancel (or closing the window) ends the dialog.
     """
+
+    bibliography_added = Signal()
 
     def __init__(
         self, add_bibliography: AddBibliography, all_author_names: list[str] = (), parent: QWidget | None = None
@@ -37,7 +40,6 @@ class AddBibliographyDialog(QDialog):
         self._add_bibliography = add_bibliography
         self._all_author_names = list(all_author_names)
         self._authors: list[str] = []
-        self.any_added = False
 
         self._call_number = QLineEdit()
         self._title = QLineEdit()
@@ -101,7 +103,7 @@ class AddBibliographyDialog(QDialog):
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add bibliography", str(error))
             return
-        self.any_added = True
+        self.bibliography_added.emit()
         self._reset_fields()
 
     def _reset_fields(self) -> None:
