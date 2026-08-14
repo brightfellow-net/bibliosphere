@@ -47,6 +47,14 @@ class SqliteBibliographyRepository:
             f"UPDATE bibliographies SET {assignments} WHERE id = ?", (*values, bibliography.id)
         )
 
+    def remove(self, bibliography_id: int) -> None:
+        # No FK cascade defined in schema.sql, so the author links have to be cleared
+        # explicitly first — items aren't handled here since DeleteBibliography only
+        # calls this once list_items() is already empty.
+        self._conn.execute("DELETE FROM bibliography_authors WHERE bibliography_id = ?", (bibliography_id,))
+        self._conn.execute("DELETE FROM bibliographies WHERE id = ?", (bibliography_id,))
+        self._conn.commit()
+
     def get_by_id(self, bibliography_id: int) -> Bibliography | None:
         row = self._conn.execute("SELECT * FROM bibliographies WHERE id = ?", (bibliography_id,)).fetchone()
         return self._row_to_bibliography(row) if row else None

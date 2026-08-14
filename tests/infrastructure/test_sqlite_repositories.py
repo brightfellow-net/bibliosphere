@@ -53,6 +53,19 @@ def test_bibliography_repository_round_trip(conn):
     assert repo.get_item(item.id) is None
 
 
+def test_bibliography_repository_remove_clears_author_links(conn):
+    repo = SqliteBibliographyRepository(conn)
+    authors = SqliteAuthorRepository(conn)
+    added = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
+    herbert = authors.add(Author(id=None, name="Herbert"))
+    repo.set_authors(added.id, [herbert.id])
+
+    repo.remove(added.id)
+
+    assert repo.get_by_id(added.id) is None
+    assert repo.list_authors(added.id) == []
+
+
 def test_search_escapes_like_wildcards_in_query(conn):
     repo = SqliteBibliographyRepository(conn)
     dune = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="CN-1"))

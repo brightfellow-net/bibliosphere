@@ -22,6 +22,10 @@ class InvalidBibliographyDetails(BibliosphereError):
     """Raised when a bibliography's call number is blank."""
 
 
+class BibliographyHasItems(BibliosphereError):
+    """Raised when deleting a bibliography that still has one or more items."""
+
+
 class DuplicateUsername(BibliosphereError):
     """Raised when creating a member whose username is already taken."""
 

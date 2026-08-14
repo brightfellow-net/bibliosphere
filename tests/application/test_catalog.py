@@ -2,11 +2,13 @@ import pytest
 
 from bibliosphere.application.use_cases.add_bibliography import AddBibliography
 from bibliosphere.application.use_cases.add_item import AddItem
+from bibliosphere.application.use_cases.delete_bibliography import DeleteBibliography
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.domain.exceptions import (
+    BibliographyHasItems,
     BibliographyNotFound,
     DuplicateCallNumber,
     DuplicateIsbn,
@@ -112,6 +114,29 @@ def test_add_and_remove_item(bibliography_repo, author_repo, unit_of_work, loan_
 def test_remove_missing_item_raises(bibliography_repo, loan_repo):
     with pytest.raises(ItemNotFound):
         RemoveItem(bibliography_repo, loan_repo).execute(999)
+
+
+def test_delete_bibliography(bibliography_repo, author_repo, unit_of_work):
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="A", authors=["X"], call_number="CN-7", isbn_issn="123"
+    )
+    DeleteBibliography(bibliography_repo).execute(bibliography.id)
+    assert bibliography_repo.get_by_id(bibliography.id) is None
+
+
+def test_delete_bibliography_missing_raises(bibliography_repo):
+    with pytest.raises(BibliographyNotFound):
+        DeleteBibliography(bibliography_repo).execute(999)
+
+
+def test_delete_bibliography_rejects_when_items_exist(bibliography_repo, author_repo, unit_of_work):
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="A", authors=["X"], call_number="CN-8", isbn_issn="123"
+    )
+    AddItem(bibliography_repo).execute(bibliography.id)
+    with pytest.raises(BibliographyHasItems):
+        DeleteBibliography(bibliography_repo).execute(bibliography.id)
+    assert bibliography_repo.get_by_id(bibliography.id) is not None
 
 
 def test_search_catalog_reports_availability(bibliography_repo, author_repo, unit_of_work, loan_repo):

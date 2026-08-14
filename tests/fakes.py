@@ -31,6 +31,10 @@ class FakeBibliographyRepository:
     def update(self, bibliography: Bibliography) -> None:
         self._bibliographies[bibliography.id] = bibliography
 
+    def remove(self, bibliography_id: int) -> None:
+        self._bibliographies.pop(bibliography_id, None)
+        self._author_ids.pop(bibliography_id, None)
+
     def get_by_id(self, bibliography_id: int) -> Bibliography | None:
         return self._bibliographies.get(bibliography_id)
 
