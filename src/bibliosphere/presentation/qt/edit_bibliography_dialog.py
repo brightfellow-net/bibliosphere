@@ -11,6 +11,7 @@ class EditBibliographyDialog(QDialog):
 
         self._isbn = QLineEdit(entry.bibliography.isbn_issn or "")
         self._title = QLineEdit(entry.bibliography.title)
+        self._series_title = QLineEdit(entry.bibliography.series_title or "")
         self._authors = QLineEdit(entry.author_names)
         self._edition = QLineEdit(entry.bibliography.edition or "")
         self._publish_year = QLineEdit(entry.bibliography.publish_year or "")
@@ -19,6 +20,7 @@ class EditBibliographyDialog(QDialog):
         form = QFormLayout()
         form.addRow("ISBN/ISSN:", self._isbn)
         form.addRow("Title:", self._title)
+        form.addRow("Series Title:", self._series_title)
         form.addRow("Authors (comma-separated):", self._authors)
         form.addRow("Edition:", self._edition)
         form.addRow("Publish Year:", self._publish_year)
@@ -32,11 +34,12 @@ class EditBibliographyDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
 
-    def values(self) -> tuple[str, str, list[str], str, str, str]:
+    def values(self) -> tuple[str, str, str, list[str], str, str, str]:
         authors = [name.strip() for name in self._authors.text().split(",") if name.strip()]
         return (
             self._isbn.text().strip(),
             self._title.text().strip(),
+            self._series_title.text().strip(),
             authors,
             self._edition.text().strip(),
             self._publish_year.text().strip(),
