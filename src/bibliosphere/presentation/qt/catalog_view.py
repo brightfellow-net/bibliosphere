@@ -22,7 +22,6 @@ from bibliosphere.application.use_cases.set_bibliography_authors import SetBibli
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.presentation.qt.add_bibliography_dialog import AddBibliographyDialog
 from bibliosphere.presentation.qt.edit_bibliography_dialog import EditBibliographyDialog
-from bibliosphere.presentation.qt.manage_authors_dialog import ManageAuthorsDialog
 
 
 class CatalogView(QWidget):
@@ -78,7 +77,7 @@ class CatalogView(QWidget):
         layout.addLayout(search_row)
         layout.addWidget(self._table)
 
-        if add_bibliography is not None or edit_bibliography is not None or set_bibliography_authors is not None:
+        if add_bibliography is not None or edit_bibliography is not None:
             bib_row = QHBoxLayout()
             if add_bibliography is not None:
                 add_bib_button = QPushButton("Add Bibliography...")
@@ -88,10 +87,6 @@ class CatalogView(QWidget):
                 edit_bib_button = QPushButton("Edit Selected...")
                 edit_bib_button.clicked.connect(self._on_edit_bibliography)
                 bib_row.addWidget(edit_bib_button)
-            if set_bibliography_authors is not None:
-                manage_authors_button = QPushButton("Manage Authors...")
-                manage_authors_button.clicked.connect(self._on_manage_authors)
-                bib_row.addWidget(manage_authors_button)
             layout.addLayout(bib_row)
 
         if add_item is not None or remove_item is not None:
@@ -128,16 +123,15 @@ class CatalogView(QWidget):
         return self._entries[row]
 
     def _on_add_bibliography(self) -> None:
-        dialog = AddBibliographyDialog(self)
+        all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
+        dialog = AddBibliographyDialog(all_author_names, self)
         if not dialog.exec():
             return
-        isbn, title, series_title, edition, publish_year, call_number = dialog.values()
+        isbn, title, series_title, edition, publish_year, call_number, authors = dialog.values()
         try:
-            # New bibliographies start with no authors; add them afterward via
-            # "Manage Authors...", which is a separate action from this dialog.
             self._add_bibliography.execute(
                 title=title,
-                authors=[],
+                authors=authors,
                 isbn_issn=isbn or None,
                 series_title=series_title or None,
                 edition=edition or None,
@@ -157,19 +151,23 @@ class CatalogView(QWidget):
         if entry is None:
             QMessageBox.information(self, "No selection", "Select a bibliography first.")
             return
-        dialog = EditBibliographyDialog(entry, self)
+        all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
+        dialog = EditBibliographyDialog(entry, self._set_bibliography_authors, all_author_names, self)
         if not dialog.exec():
             return
-        isbn, title, series_title, edition, publish_year, call_number = dialog.values()
+        isbn, title, series_title, edition, publish_year, call_number, authors = dialog.values()
         existing = entry.bibliography
         try:
             # Forward the fields this dialog doesn't expose (sor, publisher_id, etc.)
-            # unchanged, so editing here can't silently null them out. Authors are
-            # managed separately via "Manage Authors...", so also forward those as-is.
+            # unchanged, so editing here can't silently null them out. `authors` here
+            # reflects whatever the dialog's "Manage Authors..." action already
+            # persisted (or the original list if untouched) — this write is therefore
+            # a harmless no-op for authors in the common case, not a second source of
+            # truth for them.
             self._edit_bibliography.execute(
                 existing.id,
                 title=title,
-                authors=[credit.author.name for credit in entry.authors],
+                authors=authors,
                 isbn_issn=isbn or None,
                 sor=existing.sor,
                 edition=edition or None,
@@ -189,22 +187,6 @@ class CatalogView(QWidget):
             )
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not edit bibliography", str(error))
-            return
-        self.refresh()
-
-    def _on_manage_authors(self) -> None:
-        entry = self.selected_entry()
-        if entry is None:
-            QMessageBox.information(self, "No selection", "Select a bibliography first.")
-            return
-        all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
-        dialog = ManageAuthorsDialog(entry, all_author_names, self)
-        if not dialog.exec():
-            return
-        try:
-            self._set_bibliography_authors.execute(entry.bibliography.id, dialog.values())
-        except BibliosphereError as error:
-            QMessageBox.warning(self, "Could not update authors", str(error))
             return
         self.refresh()
 

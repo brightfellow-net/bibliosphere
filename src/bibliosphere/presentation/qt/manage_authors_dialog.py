@@ -12,23 +12,29 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bibliosphere.application.dto import CatalogEntry
-
-
 class ManageAuthorsDialog(QDialog):
-    """Add/remove/reorder a single bibliography's authors, independent of its other
-    fields — list order becomes the stored author level (1 = main author).
+    """Add/remove/reorder authors for a bibliography (existing or not-yet-created),
+    independent of its other fields — list order becomes the stored author level
+    (1 = main author). Takes a plain title + starting author names rather than a
+    CatalogEntry so it can be opened from AddBibliographyDialog before a bibliography
+    id exists, as well as from EditBibliographyDialog for an existing one.
     """
 
-    def __init__(self, entry: CatalogEntry, all_author_names: list[str] = (), parent: QWidget | None = None):
+    def __init__(
+        self,
+        bibliography_title: str,
+        initial_authors: list[str],
+        all_author_names: list[str] = (),
+        parent: QWidget | None = None,
+    ):
         super().__init__(parent)
-        self.setWindowTitle(f"Manage Authors — {entry.bibliography.title}")
+        self.setWindowTitle(f"Manage Authors — {bibliography_title}" if bibliography_title else "Manage Authors")
         self.resize(420, 320)
         self._all_author_names = list(all_author_names)
 
         self._list = QListWidget()
-        for credit in entry.authors:
-            self._list.addItem(credit.author.name)
+        for name in initial_authors:
+            self._list.addItem(name)
 
         add_button = QPushButton("Add Author...")
         add_button.clicked.connect(self._on_add)
