@@ -18,6 +18,10 @@ class DuplicateUsername(BibliosphereError):
     """Raised when creating a member whose username is already taken."""
 
 
+class InvalidMemberDetails(BibliosphereError):
+    """Raised when a member's username, name, or password is blank."""
+
+
 class InvalidCredentials(BibliosphereError):
     """Raised when a login attempt's username/password do not match."""
 

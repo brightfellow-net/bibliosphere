@@ -10,10 +10,14 @@ class EditMemberDialog(QDialog):
 
         self._username = QLineEdit(member.username)
         self._name = QLineEdit(member.name)
+        self._password = QLineEdit()
+        self._password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._password.setPlaceholderText("Leave blank to keep current password")
 
         form = QFormLayout()
         form.addRow("Username:", self._username)
         form.addRow("Name:", self._name)
+        form.addRow("New Password:", self._password)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -23,5 +27,5 @@ class EditMemberDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
 
-    def values(self) -> tuple[str, str]:
-        return self._username.text().strip(), self._name.text().strip()
+    def values(self) -> tuple[str, str, str]:
+        return self._username.text().strip(), self._name.text().strip(), self._password.text()

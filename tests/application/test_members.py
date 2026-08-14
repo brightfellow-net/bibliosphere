@@ -4,7 +4,12 @@ from bibliosphere.application.use_cases.authenticate_user import AuthenticateUse
 from bibliosphere.application.use_cases.create_member import CreateMember
 from bibliosphere.application.use_cases.edit_member import EditMember
 from bibliosphere.domain.entities import Role
-from bibliosphere.domain.exceptions import DuplicateUsername, InvalidCredentials, MemberNotFound
+from bibliosphere.domain.exceptions import (
+    DuplicateUsername,
+    InvalidCredentials,
+    InvalidMemberDetails,
+    MemberNotFound,
+)
 
 
 def test_create_member_hashes_password(member_repo):
@@ -17,6 +22,18 @@ def test_create_member_rejects_duplicate_username(member_repo):
     CreateMember(member_repo).execute("alice", "Alice", "pw1", Role.PATRON)
     with pytest.raises(DuplicateUsername):
         CreateMember(member_repo).execute("alice", "Alice 2", "pw2", Role.LIBRARIAN)
+
+
+def test_create_member_rejects_blank_password(member_repo):
+    with pytest.raises(InvalidMemberDetails):
+        CreateMember(member_repo).execute("alice", "Alice", "", Role.PATRON)
+
+
+def test_create_member_rejects_blank_username_or_name(member_repo):
+    with pytest.raises(InvalidMemberDetails):
+        CreateMember(member_repo).execute("  ", "Alice", "pw", Role.PATRON)
+    with pytest.raises(InvalidMemberDetails):
+        CreateMember(member_repo).execute("alice", "  ", "pw", Role.PATRON)
 
 
 def test_authenticate_user_success(member_repo):
@@ -44,6 +61,23 @@ def test_edit_member(member_repo):
     assert updated.password_hash == member.password_hash
 
 
+def test_edit_member_resets_password_when_provided(member_repo):
+    member = CreateMember(member_repo).execute("alice", "Alice", "old-pw", Role.PATRON)
+    EditMember(member_repo).execute(member.id, username="alice", name="Alice", password="new-pw")
+
+    with pytest.raises(InvalidCredentials):
+        AuthenticateUser(member_repo).execute("alice", "old-pw")
+    assert AuthenticateUser(member_repo).execute("alice", "new-pw").username == "alice"
+
+
 def test_edit_member_missing_raises(member_repo):
     with pytest.raises(MemberNotFound):
         EditMember(member_repo).execute(999, username="x", name="y")
+
+
+def test_edit_member_rejects_blank_username_or_name(member_repo):
+    member = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
+    with pytest.raises(InvalidMemberDetails):
+        EditMember(member_repo).execute(member.id, username="  ", name="Alice")
+    with pytest.raises(InvalidMemberDetails):
+        EditMember(member_repo).execute(member.id, username="alice", name="  ")

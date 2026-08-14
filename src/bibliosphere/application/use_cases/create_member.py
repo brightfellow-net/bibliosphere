@@ -1,6 +1,6 @@
 from bibliosphere.application.security import hash_password
 from bibliosphere.domain.entities import Member, Role
-from bibliosphere.domain.exceptions import DuplicateUsername
+from bibliosphere.domain.exceptions import DuplicateUsername, InvalidMemberDetails
 from bibliosphere.domain.ports import MemberRepository
 
 
@@ -16,6 +16,9 @@ class CreateMember:
         self._members = member_repository
 
     def execute(self, username: str, name: str, password: str, role: Role) -> Member:
+        if not username.strip() or not name.strip() or not password:
+            raise InvalidMemberDetails("Username, name, and password must not be blank")
+
         if self._members.get_by_username(username) is not None:
             raise DuplicateUsername(f"Username {username!r} is already taken")
 

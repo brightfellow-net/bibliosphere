@@ -91,9 +91,9 @@ class MemberView(QWidget):
         dialog = EditMemberDialog(member, self)
         if not dialog.exec():
             return
-        username, name = dialog.values()
+        username, name, password = dialog.values()
         try:
-            self._edit_member.execute(member.id, username, name)
+            self._edit_member.execute(member.id, username, name, password)
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not edit member", str(error))
             return
