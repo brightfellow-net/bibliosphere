@@ -5,6 +5,7 @@ from bibliosphere.application.use_cases.add_item import AddItem
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
+from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.domain.exceptions import BibliographyNotFound, DuplicateIsbn, ItemNotAvailable, ItemNotFound
 
 
@@ -36,6 +37,30 @@ def test_edit_bibliography_missing_raises(bibliography_repo, author_repo, unit_o
     use_case = EditBibliography(bibliography_repo, author_repo, unit_of_work)
     with pytest.raises(BibliographyNotFound):
         use_case.execute(999, title="A", authors=["X"], isbn_issn="123")
+
+
+def test_set_bibliography_authors(bibliography_repo, author_repo, unit_of_work):
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="Dune", authors=[], isbn_issn="123"
+    )
+    use_case = SetBibliographyAuthors(bibliography_repo, author_repo, unit_of_work)
+
+    use_case.execute(bibliography.id, ["Frank Herbert", "Brian Herbert"])
+    assert [c.author.name for c in bibliography_repo.list_authors(bibliography.id)] == [
+        "Frank Herbert",
+        "Brian Herbert",
+    ]
+
+    # Reordering and dropping an author should be reflected exactly, independent of
+    # the bibliography's other fields.
+    use_case.execute(bibliography.id, ["Brian Herbert"])
+    assert [c.author.name for c in bibliography_repo.list_authors(bibliography.id)] == ["Brian Herbert"]
+
+
+def test_set_bibliography_authors_missing_raises(bibliography_repo, author_repo, unit_of_work):
+    use_case = SetBibliographyAuthors(bibliography_repo, author_repo, unit_of_work)
+    with pytest.raises(BibliographyNotFound):
+        use_case.execute(999, ["X"])
 
 
 def test_add_and_remove_item(bibliography_repo, author_repo, unit_of_work, loan_repo):

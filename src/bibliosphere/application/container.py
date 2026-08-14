@@ -13,6 +13,7 @@ from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
+from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 
 
 @dataclass
@@ -27,6 +28,7 @@ class UseCases:
     search_catalog: SearchCatalog
     add_bibliography: AddBibliography
     edit_bibliography: EditBibliography
+    set_bibliography_authors: SetBibliographyAuthors
     add_item: AddItem
     remove_item: RemoveItem
     list_members: ListMembers

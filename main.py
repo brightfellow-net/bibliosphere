@@ -19,6 +19,7 @@ from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
+from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.infrastructure.sqlite.author_repository import SqliteAuthorRepository
 from bibliosphere.infrastructure.sqlite.bibliography_repository import SqliteBibliographyRepository
 from bibliosphere.infrastructure.sqlite.connection import connect, init_schema
@@ -46,6 +47,7 @@ def build_use_cases(db_path: Path) -> UseCases:
         search_catalog=SearchCatalog(bibliographies, loans),
         add_bibliography=AddBibliography(bibliographies, authors, bibliography_uow),
         edit_bibliography=EditBibliography(bibliographies, authors, bibliography_uow),
+        set_bibliography_authors=SetBibliographyAuthors(bibliographies, authors, bibliography_uow),
         add_item=AddItem(bibliographies),
         remove_item=RemoveItem(bibliographies, loans),
         list_members=ListMembers(members),
