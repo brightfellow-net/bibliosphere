@@ -109,7 +109,7 @@ class MemberView(QWidget):
     def _row_values(member: Member) -> list[str]:
         return [
             member.id,
-            member.username,
+            member.username or "",
             member.name,
             member.role.value,
             member.birthdate.isoformat() if member.birthdate else "",

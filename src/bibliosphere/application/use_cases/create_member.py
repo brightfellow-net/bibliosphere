@@ -31,17 +31,25 @@ class CreateMember:
         address: str | None = None,
     ) -> Member:
         """`join_date` is not a parameter: it is always set to today, since members are
-        created at the moment they join.
+        created at the moment they join. `username`/`password` are only required for
+        Role.LIBRARIAN — a patron with neither simply has no self-service login.
         """
-        if not member_id.strip() or not username.strip() or not name.strip() or not password:
-            raise InvalidMemberDetails("Member id, username, name, and password must not be blank")
+        if not member_id.strip() or not name.strip():
+            raise InvalidMemberDetails("Member id and name must not be blank")
+        if role is Role.LIBRARIAN and (not username.strip() or not password):
+            raise InvalidMemberDetails("Librarian accounts require a username and password")
 
         if self._members.get_by_id(member_id) is not None:
             raise DuplicateMemberId(f"Member id {member_id!r} is already in use")
-        if self._members.get_by_username(username) is not None:
+
+        username = username.strip() or None
+        if username is not None and self._members.get_by_username(username) is not None:
             raise DuplicateUsername(f"Username {username!r} is already taken")
 
-        password_hash, salt = hash_password(password)
+        if password:
+            password_hash, salt = hash_password(password)
+        else:
+            password_hash, salt = None, None
         member = Member(
             id=member_id,
             username=username,

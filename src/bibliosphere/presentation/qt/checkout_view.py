@@ -135,7 +135,9 @@ class CheckoutView(QWidget):
 
         self._member_by_display_text = {}
         for member in self._list_members.execute():
-            display = f"{member.id} — {member.name} ({member.username})"
+            display = f"{member.id} — {member.name}"
+            if member.username:
+                display += f" ({member.username})"
             self._member_by_display_text[display] = member
         self._member_completer_model.setStringList(sorted(self._member_by_display_text))
 
@@ -178,7 +180,8 @@ class CheckoutView(QWidget):
             self._selected_member_label.setText("No matching member selected.")
             self._selected_member_label.setStyleSheet("color: gray;")
         else:
-            self._selected_member_label.setText(f"{member.name} ({member.username}) — {member.role.value}")
+            username_part = f" ({member.username})" if member.username else ""
+            self._selected_member_label.setText(f"{member.name}{username_part} — {member.role.value}")
             self._selected_member_label.setStyleSheet("")
         self._populate_loans_table(member)
 

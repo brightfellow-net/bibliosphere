@@ -11,15 +11,15 @@ class EditMemberDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Edit Member")
 
-        self._username = QLineEdit(member.username)
+        self._username = QLineEdit(member.username or "")
         self._name = QLineEdit(member.name)
         self._password = QLineEdit()
         self._password.setEchoMode(QLineEdit.EchoMode.Password)
-        self._password.setPlaceholderText("Leave blank to keep current password")
         self._role = QComboBox()
         self._role.addItem("Patron", Role.PATRON)
         self._role.addItem("Librarian", Role.LIBRARIAN)
         self._role.setCurrentIndex(self._role.findData(member.role))
+        self._role.currentIndexChanged.connect(self._update_credential_hints)
         self._birthdate = QLineEdit(member.birthdate.isoformat() if member.birthdate else "")
         self._birthdate.setPlaceholderText("YYYY-MM-DD")
         self._email = QLineEdit(member.email or "")
@@ -47,6 +47,17 @@ class EditMemberDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(buttons)
+
+        self._update_credential_hints()
+
+    def _update_credential_hints(self) -> None:
+        # Only librarians must be able to log in; a patron with neither is fine.
+        if self._role.currentData() is Role.PATRON:
+            self._username.setPlaceholderText("Optional for patrons")
+            self._password.setPlaceholderText("Optional for patrons; leave blank to keep current")
+        else:
+            self._username.setPlaceholderText("")
+            self._password.setPlaceholderText("Leave blank to keep current password")
 
     def values(self) -> tuple[str, str, str, Role, date | None, str | None, str | None, date | None, str | None]:
         return (

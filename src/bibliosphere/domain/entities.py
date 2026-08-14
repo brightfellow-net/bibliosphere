@@ -14,14 +14,19 @@ class Member:
     date + daily sequence), not a database-autoincremented integer: it's
     supplied by the caller before the member is persisted, with GenerateMemberId
     only providing a starting suggestion for the Add Member form.
+
+    `username`/`password_hash`/`password_salt` are required for Role.LIBRARIAN
+    (librarians must log in to use the app) but optional for Role.PATRON — a patron
+    with no username simply has no self-service login, which is fine since v1 doesn't
+    require one. See CreateMember/EditMember for the role-conditional validation.
     """
 
     id: str | None
-    username: str
+    username: str | None
     name: str
     role: Role
-    password_hash: str
-    password_salt: str
+    password_hash: str | None
+    password_salt: str | None
     birthdate: date | None = None
     email: str | None = None
     phone: str | None = None

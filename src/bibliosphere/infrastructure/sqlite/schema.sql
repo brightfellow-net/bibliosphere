@@ -1,12 +1,15 @@
 -- `id` is a librarian-assigned membership number (e.g. "20260814001" — date +
 -- daily sequence), supplied by the application at insert time, not autoincremented.
+-- username/password_hash/password_salt are nullable: required for librarians (who
+-- must log in) but optional for patrons, who may have no self-service login. SQLite's
+-- UNIQUE treats each NULL as distinct, so multiple username-less patrons are fine.
 CREATE TABLE IF NOT EXISTS members (
     id TEXT PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
+    username TEXT UNIQUE,
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('librarian', 'patron')),
-    password_hash TEXT NOT NULL,
-    password_salt TEXT NOT NULL,
+    password_hash TEXT,
+    password_salt TEXT,
     birthdate TEXT,
     email TEXT,
     phone TEXT,

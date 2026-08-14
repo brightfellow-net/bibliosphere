@@ -35,6 +35,7 @@ class AddMemberDialog(QDialog):
         self._role = QComboBox()
         self._role.addItem("Patron", Role.PATRON)
         self._role.addItem("Librarian", Role.LIBRARIAN)
+        self._role.currentIndexChanged.connect(self._update_credential_hints)
         self._birthdate = QLineEdit()
         self._birthdate.setPlaceholderText("YYYY-MM-DD")
         self._email = QLineEdit()
@@ -66,6 +67,14 @@ class AddMemberDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(self._status_label)
         layout.addWidget(buttons)
+
+        self._update_credential_hints()
+
+    def _update_credential_hints(self) -> None:
+        # Only librarians must be able to log in; a patron with neither is fine.
+        hint = "Optional for patrons" if self._role.currentData() is Role.PATRON else ""
+        self._username.setPlaceholderText(hint)
+        self._password.setPlaceholderText(hint)
 
     def _set_status(self, message: str, *, is_error: bool) -> None:
         self._status_label.setStyleSheet(f"color: {'#c0392b' if is_error else '#1e8449'};")

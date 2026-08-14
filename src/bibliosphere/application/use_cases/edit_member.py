@@ -25,17 +25,25 @@ class EditMember:
     ) -> Member:
         """`password` is optional: leave blank to keep the member's current password.
         `join_date` is not a parameter: it is set once at creation and not editable.
+        `username`/password are only required for Role.LIBRARIAN — a patron with
+        neither simply has no self-service login.
         """
-        if not username.strip() or not name.strip():
-            raise InvalidMemberDetails("Username and name must not be blank")
+        if not name.strip():
+            raise InvalidMemberDetails("Name must not be blank")
+        if role is Role.LIBRARIAN and not username.strip():
+            raise InvalidMemberDetails("Librarian accounts require a username")
 
         existing = self._members.get_by_id(member_id)
         if existing is None:
             raise MemberNotFound(f"No member with id {member_id}")
+        if role is Role.LIBRARIAN and not password and existing.password_hash is None:
+            raise InvalidMemberDetails("Librarian accounts require a password")
 
-        other = self._members.get_by_username(username)
-        if other is not None and other.id != member_id:
-            raise DuplicateUsername(f"Username {username!r} is already taken")
+        username = username.strip() or None
+        if username is not None:
+            other = self._members.get_by_username(username)
+            if other is not None and other.id != member_id:
+                raise DuplicateUsername(f"Username {username!r} is already taken")
 
         if password:
             password_hash, password_salt = hash_password(password)

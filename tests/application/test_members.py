@@ -68,9 +68,9 @@ def test_create_member_rejects_duplicate_member_id(member_repo):
         CreateMember(member_repo).execute("M0001", "bob", "Bob", "pw2", Role.PATRON)
 
 
-def test_create_member_rejects_blank_password(member_repo):
+def test_create_member_rejects_blank_password_for_librarian(member_repo):
     with pytest.raises(InvalidMemberDetails):
-        CreateMember(member_repo).execute("M0001", "alice", "Alice", "", Role.PATRON)
+        CreateMember(member_repo).execute("M0001", "alice", "Alice", "", Role.LIBRARIAN)
 
 
 def test_create_member_rejects_blank_member_id(member_repo):
@@ -78,11 +78,28 @@ def test_create_member_rejects_blank_member_id(member_repo):
         CreateMember(member_repo).execute("  ", "alice", "Alice", "pw", Role.PATRON)
 
 
-def test_create_member_rejects_blank_username_or_name(member_repo):
-    with pytest.raises(InvalidMemberDetails):
-        CreateMember(member_repo).execute("M0001", "  ", "Alice", "pw", Role.PATRON)
+def test_create_member_rejects_blank_name(member_repo):
     with pytest.raises(InvalidMemberDetails):
         CreateMember(member_repo).execute("M0001", "alice", "  ", "pw", Role.PATRON)
+
+
+def test_create_member_rejects_blank_username_for_librarian(member_repo):
+    with pytest.raises(InvalidMemberDetails):
+        CreateMember(member_repo).execute("M0001", "  ", "Alice", "pw", Role.LIBRARIAN)
+
+
+def test_create_member_allows_blank_username_and_password_for_patron(member_repo):
+    member = CreateMember(member_repo).execute("M0001", "  ", "Alice", "", Role.PATRON)
+    assert member.username is None
+    assert member.password_hash is None
+    assert member.password_salt is None
+
+
+def test_create_member_allows_a_second_patron_with_no_username(member_repo):
+    # A UNIQUE column would otherwise reject a second NULL/blank username.
+    CreateMember(member_repo).execute("M0001", "", "Alice", "", Role.PATRON)
+    member2 = CreateMember(member_repo).execute("M0002", "", "Bob", "", Role.PATRON)
+    assert member2.username is None
 
 
 def test_authenticate_user_success(member_repo):
@@ -130,12 +147,34 @@ def test_edit_member_missing_raises(member_repo):
         EditMember(member_repo).execute("nonexistent", username="x", name="y", role=Role.PATRON)
 
 
-def test_edit_member_rejects_blank_username_or_name(member_repo):
+def test_edit_member_rejects_blank_name(member_repo):
     member = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.PATRON)
     with pytest.raises(InvalidMemberDetails):
-        EditMember(member_repo).execute(member.id, username="  ", name="Alice", role=Role.PATRON)
-    with pytest.raises(InvalidMemberDetails):
         EditMember(member_repo).execute(member.id, username="alice", name="  ", role=Role.PATRON)
+
+
+def test_edit_member_rejects_blank_username_for_librarian(member_repo):
+    member = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.LIBRARIAN)
+    with pytest.raises(InvalidMemberDetails):
+        EditMember(member_repo).execute(member.id, username="  ", name="Alice", role=Role.LIBRARIAN)
+
+
+def test_edit_member_allows_blank_username_for_patron(member_repo):
+    member = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.PATRON)
+    updated = EditMember(member_repo).execute(member.id, username="  ", name="Alice", role=Role.PATRON)
+    assert updated.username is None
+
+
+def test_edit_member_rejects_changing_to_librarian_without_ever_setting_a_password(member_repo):
+    member = CreateMember(member_repo).execute("M0001", "", "Alice", "", Role.PATRON)
+    with pytest.raises(InvalidMemberDetails):
+        EditMember(member_repo).execute(member.id, username="alice", name="Alice", role=Role.LIBRARIAN)
+    # Providing a password alongside the role change should succeed.
+    updated = EditMember(member_repo).execute(
+        member.id, username="alice", name="Alice", role=Role.LIBRARIAN, password="pw"
+    )
+    assert updated.role == Role.LIBRARIAN
+    assert updated.password_hash is not None
 
 
 def test_edit_member_updates_optional_fields(member_repo):

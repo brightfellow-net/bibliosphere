@@ -153,6 +153,17 @@ def test_member_repository_round_trip_with_optional_fields(conn):
     assert repo.get_by_id(added.id) == added
 
 
+def test_member_repository_allows_multiple_patrons_with_no_username(conn):
+    # A UNIQUE column would otherwise reject a second NULL username.
+    repo = SqliteMemberRepository(conn)
+    m1 = repo.add(Member(id="M0003", username=None, name="Carol", role=Role.PATRON, password_hash=None, password_salt=None))
+    m2 = repo.add(Member(id="M0004", username=None, name="Dave", role=Role.PATRON, password_hash=None, password_salt=None))
+
+    assert repo.get_by_id(m1.id).username is None
+    assert repo.get_by_id(m2.id).username is None
+    assert repo.get_by_username("") is None
+
+
 def test_loan_repository_open_loan_tracking(conn):
     bibliographies = SqliteBibliographyRepository(conn)
     members = SqliteMemberRepository(conn)
