@@ -1,3 +1,4 @@
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -17,11 +18,15 @@ from bibliosphere.application.use_cases.set_bibliography_authors import SetBibli
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.presentation.qt.manage_authors_dialog import ManageAuthorsDialog
 
+_CLOSE_DELAY_MS = 1000
+
 
 class EditBibliographyDialog(QDialog):
     """Stays open and shows the error on invalid input, instead of closing on OK and
-    leaving the caller to report the failure after the fields are already gone —
-    the use case is called (and can be retried) from within this dialog.
+    leaving the caller to report the failure after the fields are already gone — the
+    use case is called (and can be retried) from within this dialog. On success, it
+    shows a confirmation and closes itself after a brief delay instead of vanishing
+    immediately, so the confirmation is actually visible.
     """
 
     def __init__(
@@ -67,14 +72,22 @@ class EditBibliographyDialog(QDialog):
         authors_row.addWidget(self._authors_label, stretch=1)
         authors_row.addWidget(manage_authors_button)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self._on_ok_clicked)
-        buttons.rejected.connect(self.reject)
+        self._status_label = QLabel()
+        self._status_label.setWordWrap(True)
+
+        self._buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self._buttons.accepted.connect(self._on_ok_clicked)
+        self._buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addLayout(authors_row)
-        layout.addWidget(buttons)
+        layout.addWidget(self._status_label)
+        layout.addWidget(self._buttons)
+
+    def _set_status(self, message: str, *, is_error: bool) -> None:
+        self._status_label.setStyleSheet(f"color: {'#c0392b' if is_error else '#1e8449'};")
+        self._status_label.setText(message)
 
     def _update_authors_label(self) -> None:
         self._authors_label.setText(
@@ -129,6 +142,11 @@ class EditBibliographyDialog(QDialog):
                 carrier_type_id=existing.carrier_type_id,
             )
         except BibliosphereError as error:
-            QMessageBox.warning(self, "Could not edit bibliography", str(error))
+            self._set_status(str(error), is_error=True)
             return
-        self.accept()
+        self._set_status("Bibliography updated.", is_error=False)
+        # Disable further edits/clicks while the confirmation is showing, then close on
+        # its own — the user asked for the success message to actually be visible
+        # instead of the dialog vanishing the instant OK is clicked.
+        self._buttons.setEnabled(False)
+        QTimer.singleShot(_CLOSE_DELAY_MS, self.accept)

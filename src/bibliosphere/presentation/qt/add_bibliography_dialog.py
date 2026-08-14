@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -66,6 +65,9 @@ class AddBibliographyDialog(QDialog):
         authors_row.addWidget(self._authors_label, stretch=1)
         authors_row.addWidget(manage_authors_button)
 
+        self._status_label = QLabel()
+        self._status_label.setWordWrap(True)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._on_ok_clicked)
         buttons.rejected.connect(self.reject)
@@ -73,7 +75,12 @@ class AddBibliographyDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addLayout(authors_row)
+        layout.addWidget(self._status_label)
         layout.addWidget(buttons)
+
+    def _set_status(self, message: str, *, is_error: bool) -> None:
+        self._status_label.setStyleSheet(f"color: {'#c0392b' if is_error else '#1e8449'};")
+        self._status_label.setText(message)
 
     def _update_authors_label(self) -> None:
         self._authors_label.setText(f"Authors: {', '.join(self._authors)}" if self._authors else "Authors: (none)")
@@ -101,10 +108,11 @@ class AddBibliographyDialog(QDialog):
                 publish_year=self._publish_year.text().strip() or None,
             )
         except BibliosphereError as error:
-            QMessageBox.warning(self, "Could not add bibliography", str(error))
+            self._set_status(str(error), is_error=True)
             return
         self.bibliography_added.emit()
         self._reset_fields()
+        self._set_status("Bibliography added.", is_error=False)
 
     def _reset_fields(self) -> None:
         for field in (
