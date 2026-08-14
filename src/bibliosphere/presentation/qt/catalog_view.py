@@ -54,8 +54,8 @@ class CatalogView(QWidget):
         search_button = QPushButton("Search")
         search_button.clicked.connect(self.refresh)
 
-        self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(["Title", "Authors", "ISBN", "Call Number", "Available"])
+        self._table = QTableWidget(0, 6)
+        self._table.setHorizontalHeaderLabels(["Title", "Authors", "ISBN", "Edition", "Call Number", "Available"])
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -102,8 +102,9 @@ class CatalogView(QWidget):
             self._table.setItem(row, 0, QTableWidgetItem(entry.bibliography.title))
             self._table.setItem(row, 1, QTableWidgetItem(entry.author_names))
             self._table.setItem(row, 2, QTableWidgetItem(entry.bibliography.isbn_issn or ""))
-            self._table.setItem(row, 3, QTableWidgetItem(entry.bibliography.call_number or ""))
-            self._table.setItem(row, 4, QTableWidgetItem(f"{entry.available_items}/{entry.total_items}"))
+            self._table.setItem(row, 3, QTableWidgetItem(entry.bibliography.edition or ""))
+            self._table.setItem(row, 4, QTableWidgetItem(entry.bibliography.call_number or ""))
+            self._table.setItem(row, 5, QTableWidgetItem(f"{entry.available_items}/{entry.total_items}"))
 
     def selected_entry(self) -> CatalogEntry | None:
         row = self._table.currentRow()
@@ -115,10 +116,14 @@ class CatalogView(QWidget):
         dialog = AddBibliographyDialog(self)
         if not dialog.exec():
             return
-        isbn, title, authors, call_number = dialog.values()
+        isbn, title, authors, edition, call_number = dialog.values()
         try:
             self._add_bibliography.execute(
-                title=title, authors=authors, isbn_issn=isbn or None, call_number=call_number or None
+                title=title,
+                authors=authors,
+                isbn_issn=isbn or None,
+                edition=edition or None,
+                call_number=call_number or None,
             )
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add bibliography", str(error))
@@ -136,18 +141,18 @@ class CatalogView(QWidget):
         dialog = EditBibliographyDialog(entry, self)
         if not dialog.exec():
             return
-        isbn, title, authors, call_number = dialog.values()
+        isbn, title, authors, edition, call_number = dialog.values()
         existing = entry.bibliography
         try:
-            # Forward the fields this dialog doesn't expose (sor, edition, publisher_id,
-            # etc.) unchanged, so editing here can't silently null them out.
+            # Forward the fields this dialog doesn't expose (sor, publisher_id, etc.)
+            # unchanged, so editing here can't silently null them out.
             self._edit_bibliography.execute(
                 existing.id,
                 title=title,
                 authors=authors,
                 isbn_issn=isbn or None,
                 sor=existing.sor,
-                edition=existing.edition,
+                edition=edition or None,
                 publish_year=existing.publish_year,
                 collation=existing.collation,
                 series_title=existing.series_title,
