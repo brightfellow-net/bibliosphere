@@ -1,3 +1,4 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -22,6 +23,8 @@ from bibliosphere.application.use_cases.set_bibliography_authors import SetBibli
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.presentation.qt.add_bibliography_dialog import AddBibliographyDialog
 from bibliosphere.presentation.qt.edit_bibliography_dialog import EditBibliographyDialog
+
+_COLUMN_LABELS = ["Call Number", "Title", "Series Title", "Authors", "ISBN", "Edition", "Publish Year", "Available"]
 
 
 class CatalogView(QWidget):
@@ -53,28 +56,25 @@ class CatalogView(QWidget):
         self._remove_item = remove_item
         self._entries: list[CatalogEntry] = []
 
-        self._search_box = QLineEdit()
-        self._search_box.setPlaceholderText("Search by title, authors, or ISBN...")
-        self._search_box.returnPressed.connect(self.refresh)
+        self._column_filters: list[QLineEdit] = []
+        filter_row = QHBoxLayout()
+        for label in _COLUMN_LABELS:
+            filter_box = QLineEdit()
+            filter_box.setPlaceholderText(f"Filter {label}...")
+            filter_box.textChanged.connect(self._apply_filters)
+            self._column_filters.append(filter_box)
+            filter_row.addWidget(filter_box)
 
-        search_button = QPushButton("Search")
-        search_button.clicked.connect(self.refresh)
-
-        self._table = QTableWidget(0, 8)
-        self._table.setHorizontalHeaderLabels(
-            ["Call Number", "Title", "Series Title", "Authors", "ISBN", "Edition", "Publish Year", "Available"]
-        )
+        self._table = QTableWidget(0, len(_COLUMN_LABELS))
+        self._table.setHorizontalHeaderLabels(_COLUMN_LABELS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-
-        search_row = QHBoxLayout()
-        search_row.addWidget(self._search_box)
-        search_row.addWidget(search_button)
+        self._table.setSortingEnabled(True)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(search_row)
+        layout.addLayout(filter_row)
         layout.addWidget(self._table)
 
         if add_bibliography is not None or edit_bibliography is not None:
@@ -104,23 +104,59 @@ class CatalogView(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        self._entries = self._search_catalog.execute(self._search_box.text().strip())
-        self._table.setRowCount(len(self._entries))
-        for row, entry in enumerate(self._entries):
-            self._table.setItem(row, 0, QTableWidgetItem(entry.bibliography.call_number or ""))
-            self._table.setItem(row, 1, QTableWidgetItem(entry.bibliography.title))
-            self._table.setItem(row, 2, QTableWidgetItem(entry.bibliography.series_title or ""))
-            self._table.setItem(row, 3, QTableWidgetItem(entry.author_names))
-            self._table.setItem(row, 4, QTableWidgetItem(entry.bibliography.isbn_issn or ""))
-            self._table.setItem(row, 5, QTableWidgetItem(entry.bibliography.edition or ""))
-            self._table.setItem(row, 6, QTableWidgetItem(entry.bibliography.publish_year or ""))
-            self._table.setItem(row, 7, QTableWidgetItem(f"{entry.available_items}/{entry.total_items}"))
+        self._entries = self._search_catalog.execute("")
+        self._apply_filters()
+
+    def _apply_filters(self) -> None:
+        filters = [box.text().strip().lower() for box in self._column_filters]
+        matching = [entry for entry in self._entries if self._matches_filters(entry, filters)]
+
+        # Disable sorting while bulk-repopulating rows — otherwise Qt re-sorts after
+        # every single setItem() call, which is both slow and can scatter a row's
+        # cells across the wrong positions mid-insert.
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(matching))
+        for row, entry in enumerate(matching):
+            self._set_row(row, entry)
+        self._table.setSortingEnabled(True)
+
+    @staticmethod
+    def _matches_filters(entry: CatalogEntry, filters: list[str]) -> bool:
+        values = CatalogView._row_values(entry)
+        return all(needle in value.lower() for needle, value in zip(filters, values) if needle)
+
+    @staticmethod
+    def _row_values(entry: CatalogEntry) -> list[str]:
+        return [
+            entry.bibliography.call_number or "",
+            entry.bibliography.title,
+            entry.bibliography.series_title or "",
+            entry.author_names,
+            entry.bibliography.isbn_issn or "",
+            entry.bibliography.edition or "",
+            entry.bibliography.publish_year or "",
+            f"{entry.available_items}/{entry.total_items}",
+        ]
+
+    def _set_row(self, row: int, entry: CatalogEntry) -> None:
+        for column, value in enumerate(self._row_values(entry)):
+            item = QTableWidgetItem(value)
+            if column == 0:
+                # Row order shifts under sorting/filtering, so selected_entry() looks
+                # entries up by this id instead of assuming row index == self._entries
+                # index.
+                item.setData(Qt.ItemDataRole.UserRole, entry.bibliography.id)
+            self._table.setItem(row, column, item)
 
     def selected_entry(self) -> CatalogEntry | None:
         row = self._table.currentRow()
-        if row < 0 or row >= len(self._entries):
+        if row < 0:
             return None
-        return self._entries[row]
+        item = self._table.item(row, 0)
+        if item is None:
+            return None
+        bibliography_id = item.data(Qt.ItemDataRole.UserRole)
+        return next((entry for entry in self._entries if entry.bibliography.id == bibliography_id), None)
 
     def _on_add_bibliography(self) -> None:
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
@@ -141,9 +177,10 @@ class CatalogView(QWidget):
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add bibliography", str(error))
             return
-        # Otherwise a leftover search filter can hide the just-added bibliography with
-        # no feedback that anything happened, inviting an accidental duplicate re-add.
-        self._search_box.clear()
+        # Otherwise a leftover filter can hide the just-added bibliography with no
+        # feedback that anything happened, inviting an accidental duplicate re-add.
+        for box in self._column_filters:
+            box.clear()
         self.refresh()
 
     def _on_edit_bibliography(self) -> None:
