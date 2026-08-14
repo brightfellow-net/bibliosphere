@@ -128,21 +128,8 @@ class MemberView(QWidget):
 
     def _on_add_member(self) -> None:
         suggested_id = self._generate_member_id.execute()
-        dialog = AddMemberDialog(suggested_id, self)
+        dialog = AddMemberDialog(suggested_id, self._create_member, self)
         if not dialog.exec():
-            return
-        try:
-            member_id, username, name, password, role, birthdate, email, phone, expiry_date, address = (
-                dialog.values()
-            )
-            self._create_member.execute(
-                member_id, username, name, password, role, birthdate, email, phone, expiry_date, address
-            )
-        except ValueError as error:
-            QMessageBox.warning(self, "Could not add member", f"Invalid date: {error}")
-            return
-        except BibliosphereError as error:
-            QMessageBox.warning(self, "Could not add member", str(error))
             return
         self.refresh()
 
