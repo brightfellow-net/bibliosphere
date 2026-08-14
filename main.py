@@ -68,7 +68,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     use_cases = build_use_cases(DB_PATH)
     window = MainWindow(use_cases)
-    window.show()
+    window.showMaximized()
     return app.exec()
 
 
