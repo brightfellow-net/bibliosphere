@@ -44,6 +44,10 @@ class CheckoutView(QWidget):
         self._list_open_loans = list_open_loans
         self._return_item = return_item
         self._loan_views: list[LoanView] = []
+        # Subset of self._loan_views actually shown in the Return table (see
+        # _populate_loans_table) — _on_return indexes into this, not self._loan_views,
+        # since filtering makes the table's row order diverge from the unfiltered list.
+        self._displayed_loans: list[LoanView] = []
         # Keyed by "<call number> — <title>" (call numbers are unique and mandatory),
         # so the input box's exact text always resolves unambiguously to one entry.
         self._entry_by_display_text: dict[str, CatalogEntry] = {}
@@ -81,8 +85,11 @@ class CheckoutView(QWidget):
         self._member_input.setCompleter(member_completer)
         self._member_input.textChanged.connect(self._update_selected_member_label)
 
+        # Not initialized here the way _selected_book_label is above: this also
+        # populates the Return table (see _update_selected_member_label), which needs
+        # self._loans_table — built afterward, in _build_returns_box(). refresh(), at
+        # the end of __init__, sets both the label and the table's initial contents.
         self._selected_member_label = QLabel()
-        self._update_selected_member_label()
 
         checkout_button = QPushButton("Check Out")
         checkout_button.clicked.connect(self._on_checkout)
@@ -131,11 +138,20 @@ class CheckoutView(QWidget):
             display = f"{member.id} — {member.name} ({member.username})"
             self._member_by_display_text[display] = member
         self._member_completer_model.setStringList(sorted(self._member_by_display_text))
-        self._update_selected_member_label()
 
         self._loan_views = self._list_open_loans.execute()
-        self._loans_table.setRowCount(len(self._loan_views))
-        for row, view in enumerate(self._loan_views):
+        # Also (re)populates the Return table filtered to whatever member is currently
+        # entered — must run after self._loan_views is fetched above.
+        self._update_selected_member_label()
+
+    def _populate_loans_table(self, member: Member | None) -> None:
+        # Blank/unresolved input shows every open loan (the original behavior); a
+        # resolved member narrows the Return table to just their outstanding loans.
+        self._displayed_loans = (
+            self._loan_views if member is None else [v for v in self._loan_views if v.loan.member_id == member.id]
+        )
+        self._loans_table.setRowCount(len(self._displayed_loans))
+        for row, view in enumerate(self._displayed_loans):
             self._loans_table.setItem(row, 0, QTableWidgetItem(view.bibliography_title))
             self._loans_table.setItem(row, 1, QTableWidgetItem(view.member_name))
             self._loans_table.setItem(row, 2, QTableWidgetItem(view.loan.due_date.isoformat()))
@@ -163,6 +179,7 @@ class CheckoutView(QWidget):
         else:
             self._selected_member_label.setText(f"{member.name} ({member.username}) — {member.role.value}")
             self._selected_member_label.setStyleSheet("")
+        self._populate_loans_table(member)
 
     def _on_checkout(self) -> None:
         entry = self._entry_by_display_text.get(self._bibliography_input.text().strip())
@@ -182,10 +199,10 @@ class CheckoutView(QWidget):
 
     def _on_return(self) -> None:
         row = self._loans_table.currentRow()
-        if row < 0 or row >= len(self._loan_views):
+        if row < 0 or row >= len(self._displayed_loans):
             QMessageBox.information(self, "No selection", "Select a loan to return first.")
             return
-        loan_id = self._loan_views[row].loan.id
+        loan_id = self._displayed_loans[row].loan.id
         try:
             self._return_item.execute(loan_id)
         except BibliosphereError as error:
