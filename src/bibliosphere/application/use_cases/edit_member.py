@@ -8,7 +8,7 @@ class EditMember:
     def __init__(self, member_repository: MemberRepository):
         self._members = member_repository
 
-    def execute(self, member_id: int, username: str, name: str, password: str = "") -> Member:
+    def execute(self, member_id: str, username: str, name: str, password: str = "") -> Member:
         """`password` is optional: leave blank to keep the member's current password."""
         if not username.strip() or not name.strip():
             raise InvalidMemberDetails("Username and name must not be blank")

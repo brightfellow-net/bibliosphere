@@ -13,6 +13,7 @@ from bibliosphere.application.use_cases.checkout_item import CheckoutItem
 from bibliosphere.application.use_cases.create_member import CreateMember
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.edit_member import EditMember
+from bibliosphere.application.use_cases.generate_member_id import GenerateMemberId
 from bibliosphere.application.use_cases.list_authors import ListAuthors
 from bibliosphere.application.use_cases.list_member_loans import ListMemberLoans
 from bibliosphere.application.use_cases.list_members import ListMembers
@@ -53,6 +54,7 @@ def build_use_cases(db_path: Path) -> UseCases:
         add_item=AddItem(bibliographies),
         remove_item=RemoveItem(bibliographies, loans),
         list_members=ListMembers(members),
+        generate_member_id=GenerateMemberId(members),
         create_member=CreateMember(members),
         edit_member=EditMember(members),
         checkout_item=CheckoutItem(bibliographies, members, loans),

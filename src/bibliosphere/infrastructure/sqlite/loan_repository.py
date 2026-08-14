@@ -47,7 +47,7 @@ class SqliteLoanRepository:
         ).fetchone()
         return self._row_to_loan(row) if row else None
 
-    def list_open_loans_for_member(self, member_id: int) -> list[Loan]:
+    def list_open_loans_for_member(self, member_id: str) -> list[Loan]:
         rows = self._conn.execute(
             "SELECT * FROM loans WHERE member_id = ? AND return_date IS NULL ORDER BY due_date", (member_id,)
         ).fetchall()
@@ -57,7 +57,7 @@ class SqliteLoanRepository:
         rows = self._conn.execute("SELECT * FROM loans WHERE return_date IS NULL ORDER BY due_date").fetchall()
         return [self._row_to_loan(row) for row in rows]
 
-    def count_open_loans_for_member(self, member_id: int) -> int:
+    def count_open_loans_for_member(self, member_id: str) -> int:
         row = self._conn.execute(
             "SELECT COUNT(*) AS n FROM loans WHERE member_id = ? AND return_date IS NULL", (member_id,)
         ).fetchone()

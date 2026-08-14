@@ -1,5 +1,7 @@
+-- `id` is a librarian-assigned membership number (e.g. "20260814001" — date +
+-- daily sequence), supplied by the application at insert time, not autoincremented.
 CREATE TABLE IF NOT EXISTS members (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('librarian', 'patron')),
@@ -59,7 +61,7 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE TABLE IF NOT EXISTS loans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL REFERENCES items (id),
-    member_id INTEGER NOT NULL REFERENCES members (id),
+    member_id TEXT NOT NULL REFERENCES members (id),
     checkout_date TEXT NOT NULL,
     due_date TEXT NOT NULL,
     return_date TEXT

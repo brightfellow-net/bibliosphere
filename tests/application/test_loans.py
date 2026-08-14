@@ -15,6 +15,11 @@ from bibliosphere.domain.exceptions import ItemNotAvailable, LoanAlreadyReturned
 
 
 _isbn_counter = count(1)
+_member_id_counter = count(1)
+
+
+def _create_member(member_repo, username, name, password, role):
+    return CreateMember(member_repo).execute(f"M{next(_member_id_counter):04d}", username, name, password, role)
 
 
 def _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=1):
@@ -29,7 +34,7 @@ def _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, 
 
 def test_checkout_item_success(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
     bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work)
-    member = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
+    member = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
 
     loan = CheckoutItem(bibliography_repo, member_repo, loan_repo).execute(bibliography.id, member.id)
 
@@ -39,8 +44,8 @@ def test_checkout_item_success(bibliography_repo, author_repo, unit_of_work, mem
 
 def test_checkout_item_raises_when_none_available(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
     bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=1)
-    member = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
-    other = CreateMember(member_repo).execute("bob", "Bob", "pw", Role.PATRON)
+    member = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
+    other = _create_member(member_repo, "bob", "Bob", "pw", Role.PATRON)
 
     CheckoutItem(bibliography_repo, member_repo, loan_repo).execute(bibliography.id, member.id)
 
@@ -49,7 +54,7 @@ def test_checkout_item_raises_when_none_available(bibliography_repo, author_repo
 
 
 def test_checkout_item_enforces_loan_limit(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
-    member = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
+    member = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
     checkout = CheckoutItem(bibliography_repo, member_repo, loan_repo)
 
     for _ in range(MAX_LOANS_PER_MEMBER):
@@ -63,8 +68,8 @@ def test_checkout_item_enforces_loan_limit(bibliography_repo, author_repo, unit_
 
 def test_return_item_frees_it_for_checkout(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
     bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=1)
-    member = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
-    other = CreateMember(member_repo).execute("bob", "Bob", "pw", Role.PATRON)
+    member = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
+    other = _create_member(member_repo, "bob", "Bob", "pw", Role.PATRON)
 
     checkout = CheckoutItem(bibliography_repo, member_repo, loan_repo)
     loan = checkout.execute(bibliography.id, member.id)
@@ -77,7 +82,7 @@ def test_return_item_frees_it_for_checkout(bibliography_repo, author_repo, unit_
 
 def test_return_item_rejects_already_returned_loan(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
     bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=1)
-    member = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
+    member = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
 
     checkout = CheckoutItem(bibliography_repo, member_repo, loan_repo)
     loan = checkout.execute(bibliography.id, member.id)
@@ -92,7 +97,7 @@ def test_return_item_rejects_already_returned_loan(bibliography_repo, author_rep
 
 def test_list_member_loans_only_open(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
     bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=2)
-    member = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
+    member = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
     checkout = CheckoutItem(bibliography_repo, member_repo, loan_repo)
 
     first_loan = checkout.execute(bibliography.id, member.id)

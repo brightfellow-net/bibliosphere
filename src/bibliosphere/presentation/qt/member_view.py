@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from bibliosphere.application.use_cases.create_member import CreateMember
 from bibliosphere.application.use_cases.edit_member import EditMember
+from bibliosphere.application.use_cases.generate_member_id import GenerateMemberId
 from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.domain.entities import Member
 from bibliosphere.domain.exceptions import BibliosphereError
@@ -27,16 +28,18 @@ class MemberView(QWidget):
         list_members: ListMembers,
         create_member: CreateMember,
         edit_member: EditMember,
+        generate_member_id: GenerateMemberId,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._list_members = list_members
         self._create_member = create_member
         self._edit_member = edit_member
+        self._generate_member_id = generate_member_id
         self._members: list[Member] = []
 
-        self._table = QTableWidget(0, 3)
-        self._table.setHorizontalHeaderLabels(["Username", "Name", "Role"])
+        self._table = QTableWidget(0, 4)
+        self._table.setHorizontalHeaderLabels(["ID", "Username", "Name", "Role"])
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -61,9 +64,10 @@ class MemberView(QWidget):
         self._members = self._list_members.execute()
         self._table.setRowCount(len(self._members))
         for row, member in enumerate(self._members):
-            self._table.setItem(row, 0, QTableWidgetItem(member.username))
-            self._table.setItem(row, 1, QTableWidgetItem(member.name))
-            self._table.setItem(row, 2, QTableWidgetItem(member.role.value))
+            self._table.setItem(row, 0, QTableWidgetItem(member.id))
+            self._table.setItem(row, 1, QTableWidgetItem(member.username))
+            self._table.setItem(row, 2, QTableWidgetItem(member.name))
+            self._table.setItem(row, 3, QTableWidgetItem(member.role.value))
 
     def _selected_member(self) -> Member | None:
         row = self._table.currentRow()
@@ -72,12 +76,13 @@ class MemberView(QWidget):
         return self._members[row]
 
     def _on_add_member(self) -> None:
-        dialog = AddMemberDialog(self)
+        suggested_id = self._generate_member_id.execute()
+        dialog = AddMemberDialog(suggested_id, self)
         if not dialog.exec():
             return
-        username, name, password, role = dialog.values()
+        member_id, username, name, password, role = dialog.values()
         try:
-            self._create_member.execute(username, name, password, role)
+            self._create_member.execute(member_id, username, name, password, role)
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add member", str(error))
             return

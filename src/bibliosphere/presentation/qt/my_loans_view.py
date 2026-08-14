@@ -14,7 +14,7 @@ from bibliosphere.application.use_cases.list_member_loans import ListMemberLoans
 class MyLoansView(QWidget):
     """Patron-only: view their own current loans and due dates."""
 
-    def __init__(self, list_member_loans: ListMemberLoans, member_id: int, parent: QWidget | None = None):
+    def __init__(self, list_member_loans: ListMemberLoans, member_id: str, parent: QWidget | None = None):
         super().__init__(parent)
         self._list_member_loans = list_member_loans
         self._member_id = member_id

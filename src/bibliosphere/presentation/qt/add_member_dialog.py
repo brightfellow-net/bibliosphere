@@ -4,10 +4,11 @@ from bibliosphere.domain.entities import Role
 
 
 class AddMemberDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, suggested_member_id: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Add Member")
 
+        self._member_id = QLineEdit(suggested_member_id)
         self._username = QLineEdit()
         self._name = QLineEdit()
         self._password = QLineEdit()
@@ -17,6 +18,7 @@ class AddMemberDialog(QDialog):
         self._role.addItem("Librarian", Role.LIBRARIAN)
 
         form = QFormLayout()
+        form.addRow("Member ID:", self._member_id)
         form.addRow("Username:", self._username)
         form.addRow("Name:", self._name)
         form.addRow("Password:", self._password)
@@ -30,8 +32,9 @@ class AddMemberDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
 
-    def values(self) -> tuple[str, str, str, Role]:
+    def values(self) -> tuple[str, str, str, str, Role]:
         return (
+            self._member_id.text().strip(),
             self._username.text().strip(),
             self._name.text().strip(),
             self._password.text(),

@@ -8,19 +8,13 @@ class SqliteMemberRepository:
         self._conn = connection
 
     def add(self, member: Member) -> Member:
-        cursor = self._conn.execute(
-            "INSERT INTO members (username, name, role, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)",
-            (member.username, member.name, member.role.value, member.password_hash, member.password_salt),
+        # member.id is caller-supplied (see Member's docstring), not DB-assigned.
+        self._conn.execute(
+            "INSERT INTO members (id, username, name, role, password_hash, password_salt) VALUES (?, ?, ?, ?, ?, ?)",
+            (member.id, member.username, member.name, member.role.value, member.password_hash, member.password_salt),
         )
         self._conn.commit()
-        return Member(
-            id=cursor.lastrowid,
-            username=member.username,
-            name=member.name,
-            role=member.role,
-            password_hash=member.password_hash,
-            password_salt=member.password_salt,
-        )
+        return member
 
     def update(self, member: Member) -> None:
         self._conn.execute(
@@ -29,7 +23,7 @@ class SqliteMemberRepository:
         )
         self._conn.commit()
 
-    def get_by_id(self, member_id: int) -> Member | None:
+    def get_by_id(self, member_id: str) -> Member | None:
         row = self._conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
         return self._row_to_member(row) if row else None
 

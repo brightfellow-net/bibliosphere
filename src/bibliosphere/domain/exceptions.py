@@ -26,8 +26,12 @@ class DuplicateUsername(BibliosphereError):
     """Raised when creating a member whose username is already taken."""
 
 
+class DuplicateMemberId(BibliosphereError):
+    """Raised when creating a member whose id is already in use."""
+
+
 class InvalidMemberDetails(BibliosphereError):
-    """Raised when a member's username, name, or password is blank."""
+    """Raised when a member's id, username, name, or password is blank."""
 
 
 class InvalidCredentials(BibliosphereError):

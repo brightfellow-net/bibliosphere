@@ -17,7 +17,7 @@ class CheckoutItem:
         self._members = member_repository
         self._loans = loan_repository
 
-    def execute(self, bibliography_id: int, member_id: int) -> Loan:
+    def execute(self, bibliography_id: int, member_id: str) -> Loan:
         if self._bibliographies.get_by_id(bibliography_id) is None:
             raise BibliographyNotFound(f"No bibliography with id {bibliography_id}")
         if self._members.get_by_id(member_id) is None:

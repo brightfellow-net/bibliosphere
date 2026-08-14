@@ -10,6 +10,11 @@ from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
 from bibliosphere.domain.entities import Role
 
 _isbn_counter = count(100)
+_member_id_counter = count(100)
+
+
+def _create_member(member_repo, username, name, password, role):
+    return CreateMember(member_repo).execute(f"M{next(_member_id_counter):04d}", username, name, password, role)
 
 
 def _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=1):
@@ -23,8 +28,8 @@ def _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, 
 
 
 def test_list_members(member_repo):
-    CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
-    CreateMember(member_repo).execute("bob", "Bob", "pw", Role.LIBRARIAN)
+    _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
+    _create_member(member_repo, "bob", "Bob", "pw", Role.LIBRARIAN)
 
     members = ListMembers(member_repo).execute()
     assert {m.username for m in members} == {"alice", "bob"}
@@ -32,8 +37,8 @@ def test_list_members(member_repo):
 
 def test_list_open_loans_across_all_members(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
     bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=2)
-    alice = CreateMember(member_repo).execute("alice", "Alice", "pw", Role.PATRON)
-    bob = CreateMember(member_repo).execute("bob", "Bob", "pw", Role.PATRON)
+    alice = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
+    bob = _create_member(member_repo, "bob", "Bob", "pw", Role.PATRON)
     checkout = CheckoutItem(bibliography_repo, member_repo, loan_repo)
 
     checkout.execute(bibliography.id, alice.id)

@@ -14,7 +14,7 @@ class ListMemberLoans:
         self._loans = loan_repository
         self._bibliographies = bibliography_repository
 
-    def execute(self, member_id: int) -> list[LoanView]:
+    def execute(self, member_id: str) -> list[LoanView]:
         member = self._members.get_by_id(member_id)
         if member is None:
             raise MemberNotFound(f"No member with id {member_id}")

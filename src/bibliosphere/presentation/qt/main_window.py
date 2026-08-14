@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
             )
             tabs.addTab(catalog, "Catalog")
 
-            members = MemberView(uc.list_members, uc.create_member, uc.edit_member)
+            members = MemberView(uc.list_members, uc.create_member, uc.edit_member, uc.generate_member_id)
             tabs.addTab(members, "Members")
 
             checkout = CheckoutView(

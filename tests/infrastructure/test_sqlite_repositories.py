@@ -111,7 +111,7 @@ def test_edit_bibliography_rolls_back_partial_update_on_failure(conn):
 def test_member_repository_round_trip(conn):
     repo = SqliteMemberRepository(conn)
     added = repo.add(
-        Member(id=None, username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
     )
 
     assert repo.get_by_id(added.id) == added
@@ -126,7 +126,7 @@ def test_loan_repository_open_loan_tracking(conn):
     bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
     item = bibliographies.add_item(bibliography.id)
     member = members.add(
-        Member(id=None, username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
     )
 
     today = date.today()

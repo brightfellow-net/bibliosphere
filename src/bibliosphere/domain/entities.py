@@ -10,7 +10,13 @@ class Role(Enum):
 
 @dataclass
 class Member:
-    id: int | None
+    """`id` is a librarian-assigned membership number (e.g. "20260814001" —
+    date + daily sequence), not a database-autoincremented integer: it's
+    supplied by the caller before the member is persisted, with GenerateMemberId
+    only providing a starting suggestion for the Add Member form.
+    """
+
+    id: str | None
     username: str
     name: str
     role: Role
@@ -68,7 +74,7 @@ class Item:
 class Loan:
     id: int | None
     item_id: int
-    member_id: int
+    member_id: str
     checkout_date: date
     due_date: date
     return_date: date | None = None

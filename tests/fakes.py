@@ -124,27 +124,19 @@ class FakeUnitOfWork:
 
 
 class FakeMemberRepository:
+    """member.id is caller-supplied (see Member's docstring), not autoincremented."""
+
     def __init__(self):
-        self._members: dict[int, Member] = {}
-        self._ids = count(1)
+        self._members: dict[str, Member] = {}
 
     def add(self, member: Member) -> Member:
-        new_id = next(self._ids)
-        stored = Member(
-            id=new_id,
-            username=member.username,
-            name=member.name,
-            role=member.role,
-            password_hash=member.password_hash,
-            password_salt=member.password_salt,
-        )
-        self._members[new_id] = stored
-        return stored
+        self._members[member.id] = member
+        return member
 
     def update(self, member: Member) -> None:
         self._members[member.id] = member
 
-    def get_by_id(self, member_id: int) -> Member | None:
+    def get_by_id(self, member_id: str) -> Member | None:
         return self._members.get(member_id)
 
     def get_by_username(self, username: str) -> Member | None:
@@ -181,11 +173,11 @@ class FakeLoanRepository:
     def get_open_loan_for_item(self, item_id: int) -> Loan | None:
         return next((loan for loan in self._loans.values() if loan.item_id == item_id and loan.is_open), None)
 
-    def list_open_loans_for_member(self, member_id: int) -> list[Loan]:
+    def list_open_loans_for_member(self, member_id: str) -> list[Loan]:
         return [loan for loan in self._loans.values() if loan.member_id == member_id and loan.is_open]
 
     def list_all_open_loans(self) -> list[Loan]:
         return [loan for loan in self._loans.values() if loan.is_open]
 
-    def count_open_loans_for_member(self, member_id: int) -> int:
+    def count_open_loans_for_member(self, member_id: str) -> int:
         return len(self.list_open_loans_for_member(member_id))
