@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -18,6 +19,19 @@ from bibliosphere.domain.entities import Member
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.presentation.qt.add_member_dialog import AddMemberDialog
 from bibliosphere.presentation.qt.edit_member_dialog import EditMemberDialog
+
+_COLUMN_LABELS = [
+    "ID",
+    "Username",
+    "Name",
+    "Role",
+    "Birthdate",
+    "Email",
+    "Phone",
+    "Join Date",
+    "Expiry Date",
+    "Address",
+]
 
 
 class MemberView(QWidget):
@@ -37,11 +51,22 @@ class MemberView(QWidget):
         self._edit_member = edit_member
         self._generate_member_id = generate_member_id
         self._members: list[Member] = []
+        # The subset of self._members actually shown after filtering — _selected_member
+        # indexes into this, not self._members, since a filtered table's row order
+        # diverges from the unfiltered list.
+        self._displayed_members: list[Member] = []
 
-        self._table = QTableWidget(0, 10)
-        self._table.setHorizontalHeaderLabels(
-            ["ID", "Username", "Name", "Role", "Birthdate", "Email", "Phone", "Join Date", "Expiry Date", "Address"]
-        )
+        self._column_filters: list[QLineEdit] = []
+        filter_row = QHBoxLayout()
+        for label in _COLUMN_LABELS:
+            filter_box = QLineEdit()
+            filter_box.setPlaceholderText(f"Filter {label}...")
+            filter_box.textChanged.connect(self._apply_filters)
+            self._column_filters.append(filter_box)
+            filter_row.addWidget(filter_box)
+
+        self._table = QTableWidget(0, len(_COLUMN_LABELS))
+        self._table.setHorizontalHeaderLabels(_COLUMN_LABELS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -57,6 +82,7 @@ class MemberView(QWidget):
         button_row.addWidget(edit_button)
 
         layout = QVBoxLayout(self)
+        layout.addLayout(filter_row)
         layout.addWidget(self._table)
         layout.addLayout(button_row)
 
@@ -64,24 +90,41 @@ class MemberView(QWidget):
 
     def refresh(self) -> None:
         self._members = self._list_members.execute()
-        self._table.setRowCount(len(self._members))
-        for row, member in enumerate(self._members):
-            self._table.setItem(row, 0, QTableWidgetItem(member.id))
-            self._table.setItem(row, 1, QTableWidgetItem(member.username))
-            self._table.setItem(row, 2, QTableWidgetItem(member.name))
-            self._table.setItem(row, 3, QTableWidgetItem(member.role.value))
-            self._table.setItem(row, 4, QTableWidgetItem(member.birthdate.isoformat() if member.birthdate else ""))
-            self._table.setItem(row, 5, QTableWidgetItem(member.email or ""))
-            self._table.setItem(row, 6, QTableWidgetItem(member.phone or ""))
-            self._table.setItem(row, 7, QTableWidgetItem(member.join_date.isoformat() if member.join_date else ""))
-            self._table.setItem(row, 8, QTableWidgetItem(member.expiry_date.isoformat() if member.expiry_date else ""))
-            self._table.setItem(row, 9, QTableWidgetItem(member.address or ""))
+        self._apply_filters()
+
+    def _apply_filters(self) -> None:
+        filters = [box.text().strip().lower() for box in self._column_filters]
+        self._displayed_members = [m for m in self._members if self._matches_filters(m, filters)]
+        self._table.setRowCount(len(self._displayed_members))
+        for row, member in enumerate(self._displayed_members):
+            for column, value in enumerate(self._row_values(member)):
+                self._table.setItem(row, column, QTableWidgetItem(value))
+
+    @staticmethod
+    def _matches_filters(member: Member, filters: list[str]) -> bool:
+        values = MemberView._row_values(member)
+        return all(needle in value.lower() for needle, value in zip(filters, values) if needle)
+
+    @staticmethod
+    def _row_values(member: Member) -> list[str]:
+        return [
+            member.id,
+            member.username,
+            member.name,
+            member.role.value,
+            member.birthdate.isoformat() if member.birthdate else "",
+            member.email or "",
+            member.phone or "",
+            member.join_date.isoformat() if member.join_date else "",
+            member.expiry_date.isoformat() if member.expiry_date else "",
+            member.address or "",
+        ]
 
     def _selected_member(self) -> Member | None:
         row = self._table.currentRow()
-        if row < 0 or row >= len(self._members):
+        if row < 0 or row >= len(self._displayed_members):
             return None
-        return self._members[row]
+        return self._displayed_members[row]
 
     def _on_add_member(self) -> None:
         suggested_id = self._generate_member_id.execute()
