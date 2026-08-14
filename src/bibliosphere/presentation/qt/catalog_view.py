@@ -15,6 +15,7 @@ from bibliosphere.application.dto import CatalogEntry
 from bibliosphere.application.use_cases.add_bibliography import AddBibliography
 from bibliosphere.application.use_cases.add_item import AddItem
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
+from bibliosphere.application.use_cases.list_authors import ListAuthors
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
@@ -38,6 +39,7 @@ class CatalogView(QWidget):
         add_bibliography: AddBibliography | None = None,
         edit_bibliography: EditBibliography | None = None,
         set_bibliography_authors: SetBibliographyAuthors | None = None,
+        list_authors: ListAuthors | None = None,
         add_item: AddItem | None = None,
         remove_item: RemoveItem | None = None,
         parent: QWidget | None = None,
@@ -47,6 +49,7 @@ class CatalogView(QWidget):
         self._add_bibliography = add_bibliography
         self._edit_bibliography = edit_bibliography
         self._set_bibliography_authors = set_bibliography_authors
+        self._list_authors = list_authors
         self._add_item = add_item
         self._remove_item = remove_item
         self._entries: list[CatalogEntry] = []
@@ -194,7 +197,8 @@ class CatalogView(QWidget):
         if entry is None:
             QMessageBox.information(self, "No selection", "Select a bibliography first.")
             return
-        dialog = ManageAuthorsDialog(entry, self)
+        all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
+        dialog = ManageAuthorsDialog(entry, all_author_names, self)
         if not dialog.exec():
             return
         try:

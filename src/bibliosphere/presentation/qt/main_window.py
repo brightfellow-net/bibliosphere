@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
                 add_bibliography=uc.add_bibliography,
                 edit_bibliography=uc.edit_bibliography,
                 set_bibliography_authors=uc.set_bibliography_authors,
+                list_authors=uc.list_authors,
                 add_item=uc.add_item,
                 remove_item=uc.remove_item,
             )

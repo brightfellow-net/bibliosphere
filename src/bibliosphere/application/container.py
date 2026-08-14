@@ -7,6 +7,7 @@ from bibliosphere.application.use_cases.checkout_item import CheckoutItem
 from bibliosphere.application.use_cases.create_member import CreateMember
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.edit_member import EditMember
+from bibliosphere.application.use_cases.list_authors import ListAuthors
 from bibliosphere.application.use_cases.list_member_loans import ListMemberLoans
 from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
@@ -29,6 +30,7 @@ class UseCases:
     add_bibliography: AddBibliography
     edit_bibliography: EditBibliography
     set_bibliography_authors: SetBibliographyAuthors
+    list_authors: ListAuthors
     add_item: AddItem
     remove_item: RemoveItem
     list_members: ListMembers

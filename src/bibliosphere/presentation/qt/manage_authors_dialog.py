@@ -1,8 +1,11 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
-    QInputDialog,
+    QLabel,
+    QLineEdit,
     QListWidget,
     QPushButton,
     QVBoxLayout,
@@ -17,10 +20,11 @@ class ManageAuthorsDialog(QDialog):
     fields — list order becomes the stored author level (1 = main author).
     """
 
-    def __init__(self, entry: CatalogEntry, parent: QWidget | None = None):
+    def __init__(self, entry: CatalogEntry, all_author_names: list[str] = (), parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle(f"Manage Authors — {entry.bibliography.title}")
         self.resize(420, 320)
+        self._all_author_names = list(all_author_names)
 
         self._list = QListWidget()
         for credit in entry.authors:
@@ -51,14 +55,36 @@ class ManageAuthorsDialog(QDialog):
         layout.addWidget(buttons)
 
     def _on_add(self) -> None:
-        name, ok = QInputDialog.getText(self, "Add Author", "Author name:")
-        name = name.strip()
-        if not ok or not name:
+        name = self._prompt_for_author_name()
+        if not name:
             return
         existing_names = {self._list.item(i).text() for i in range(self._list.count())}
         if name in existing_names:
             return
         self._list.addItem(name)
+
+    def _prompt_for_author_name(self) -> str:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Author")
+
+        line_edit = QLineEdit()
+        completer = QCompleter(self._all_author_names, dialog)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        line_edit.setCompleter(completer)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Author name:"))
+        layout.addWidget(line_edit)
+        layout.addWidget(buttons)
+
+        if not dialog.exec():
+            return ""
+        return line_edit.text().strip()
 
     def _on_remove(self) -> None:
         row = self._list.currentRow()
