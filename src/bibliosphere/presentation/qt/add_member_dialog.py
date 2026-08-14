@@ -10,6 +10,7 @@ class AddMemberDialog(QDialog):
     def __init__(self, suggested_member_id: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Add Member")
+        self.resize(480, 360)
 
         self._member_id = QLineEdit(suggested_member_id)
         self._username = QLineEdit()
