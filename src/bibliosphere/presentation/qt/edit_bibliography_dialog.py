@@ -1,15 +1,17 @@
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QVBoxLayout, QWidget
 
+from bibliosphere.application.dto import CatalogEntry
 
-class AddBibliographyDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None):
+
+class EditBibliographyDialog(QDialog):
+    def __init__(self, entry: CatalogEntry, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Add Bibliography")
+        self.setWindowTitle("Edit Bibliography")
         self.resize(480, 200)
 
-        self._isbn = QLineEdit()
-        self._title = QLineEdit()
-        self._authors = QLineEdit()
+        self._isbn = QLineEdit(entry.bibliography.isbn_issn or "")
+        self._title = QLineEdit(entry.bibliography.title)
+        self._authors = QLineEdit(entry.author_names)
 
         form = QFormLayout()
         form.addRow("ISBN/ISSN:", self._isbn)

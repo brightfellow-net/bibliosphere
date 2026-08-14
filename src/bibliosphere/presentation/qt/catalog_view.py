@@ -14,10 +14,12 @@ from PySide6.QtWidgets import (
 from bibliosphere.application.dto import CatalogEntry
 from bibliosphere.application.use_cases.add_bibliography import AddBibliography
 from bibliosphere.application.use_cases.add_item import AddItem
+from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.presentation.qt.add_bibliography_dialog import AddBibliographyDialog
+from bibliosphere.presentation.qt.edit_bibliography_dialog import EditBibliographyDialog
 
 
 class CatalogView(QWidget):
@@ -32,6 +34,7 @@ class CatalogView(QWidget):
         self,
         search_catalog: SearchCatalog,
         add_bibliography: AddBibliography | None = None,
+        edit_bibliography: EditBibliography | None = None,
         add_item: AddItem | None = None,
         remove_item: RemoveItem | None = None,
         parent: QWidget | None = None,
@@ -39,19 +42,20 @@ class CatalogView(QWidget):
         super().__init__(parent)
         self._search_catalog = search_catalog
         self._add_bibliography = add_bibliography
+        self._edit_bibliography = edit_bibliography
         self._add_item = add_item
         self._remove_item = remove_item
         self._entries: list[CatalogEntry] = []
 
         self._search_box = QLineEdit()
-        self._search_box.setPlaceholderText("Search by title, author, or ISBN...")
+        self._search_box.setPlaceholderText("Search by title, authors, or ISBN...")
         self._search_box.returnPressed.connect(self.refresh)
 
         search_button = QPushButton("Search")
         search_button.clicked.connect(self.refresh)
 
         self._table = QTableWidget(0, 4)
-        self._table.setHorizontalHeaderLabels(["Title", "Author", "ISBN", "Available"])
+        self._table.setHorizontalHeaderLabels(["Title", "Authors", "ISBN", "Available"])
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -65,10 +69,17 @@ class CatalogView(QWidget):
         layout.addLayout(search_row)
         layout.addWidget(self._table)
 
-        if add_bibliography is not None:
-            add_bib_button = QPushButton("Add Bibliography...")
-            add_bib_button.clicked.connect(self._on_add_bibliography)
-            layout.addWidget(add_bib_button)
+        if add_bibliography is not None or edit_bibliography is not None:
+            bib_row = QHBoxLayout()
+            if add_bibliography is not None:
+                add_bib_button = QPushButton("Add Bibliography...")
+                add_bib_button.clicked.connect(self._on_add_bibliography)
+                bib_row.addWidget(add_bib_button)
+            if edit_bibliography is not None:
+                edit_bib_button = QPushButton("Edit Selected...")
+                edit_bib_button.clicked.connect(self._on_edit_bibliography)
+                bib_row.addWidget(edit_bib_button)
+            layout.addLayout(bib_row)
 
         if add_item is not None or remove_item is not None:
             item_row = QHBoxLayout()
@@ -109,6 +120,48 @@ class CatalogView(QWidget):
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add bibliography", str(error))
             return
+        # Otherwise a leftover search filter can hide the just-added bibliography with
+        # no feedback that anything happened, inviting an accidental duplicate re-add.
+        self._search_box.clear()
+        self.refresh()
+
+    def _on_edit_bibliography(self) -> None:
+        entry = self.selected_entry()
+        if entry is None:
+            QMessageBox.information(self, "No selection", "Select a bibliography first.")
+            return
+        dialog = EditBibliographyDialog(entry, self)
+        if not dialog.exec():
+            return
+        isbn, title, authors = dialog.values()
+        existing = entry.bibliography
+        try:
+            # Forward the fields this dialog doesn't expose (sor, edition, publisher_id,
+            # etc.) unchanged, so editing here can't silently null them out.
+            self._edit_bibliography.execute(
+                existing.id,
+                title=title,
+                authors=authors,
+                isbn_issn=isbn or None,
+                sor=existing.sor,
+                edition=existing.edition,
+                publish_year=existing.publish_year,
+                collation=existing.collation,
+                series_title=existing.series_title,
+                call_number=existing.call_number,
+                classification=existing.classification,
+                notes=existing.notes,
+                language_id=existing.language_id,
+                gmd_id=existing.gmd_id,
+                publisher_id=existing.publisher_id,
+                publish_place_id=existing.publish_place_id,
+                content_type_id=existing.content_type_id,
+                media_type_id=existing.media_type_id,
+                carrier_type_id=existing.carrier_type_id,
+            )
+        except BibliosphereError as error:
+            QMessageBox.warning(self, "Could not edit bibliography", str(error))
+            return
         self.refresh()
 
     def _on_add_item(self) -> None:
@@ -116,7 +169,11 @@ class CatalogView(QWidget):
         if entry is None:
             QMessageBox.information(self, "No selection", "Select a bibliography first.")
             return
-        self._add_item.execute(entry.bibliography.id)
+        try:
+            self._add_item.execute(entry.bibliography.id)
+        except BibliosphereError as error:
+            QMessageBox.warning(self, "Could not add item", str(error))
+            return
         self.refresh()
 
     def _on_remove_item(self) -> None:

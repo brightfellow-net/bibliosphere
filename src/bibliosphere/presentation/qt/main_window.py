@@ -39,7 +39,13 @@ class MainWindow(QMainWindow):
         uc = self._use_cases
 
         if member.role is Role.LIBRARIAN:
-            catalog = CatalogView(uc.search_catalog, uc.add_bibliography, uc.add_item, uc.remove_item)
+            catalog = CatalogView(
+                uc.search_catalog,
+                add_bibliography=uc.add_bibliography,
+                edit_bibliography=uc.edit_bibliography,
+                add_item=uc.add_item,
+                remove_item=uc.remove_item,
+            )
             tabs.addTab(catalog, "Catalog")
 
             members = MemberView(uc.list_members, uc.create_member, uc.edit_member)

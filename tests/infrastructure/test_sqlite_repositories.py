@@ -52,6 +52,18 @@ def test_bibliography_repository_round_trip(conn):
     assert repo.get_item(item.id) is None
 
 
+def test_search_escapes_like_wildcards_in_query(conn):
+    repo = SqliteBibliographyRepository(conn)
+    dune = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123"))
+    wolf = repo.add(Bibliography(id=None, title="100% Wolf", isbn_issn="456"))
+
+    # A literal '_' shouldn't match every row via LIKE's single-character wildcard.
+    assert repo.search("_") == []
+    # A literal '%' should still match its literal occurrence, not act as a wildcard.
+    assert repo.search("100%") == [wolf]
+    assert repo.search("Dune") == [dune]
+
+
 def test_uow_rolls_back_all_writes_on_failure(conn):
     repo = SqliteBibliographyRepository(conn)
     uow = SqliteUnitOfWork(conn)

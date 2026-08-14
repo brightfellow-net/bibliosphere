@@ -56,13 +56,17 @@ class SqliteBibliographyRepository:
         return self._row_to_bibliography(row) if row else None
 
     def search(self, query: str) -> list[Bibliography]:
-        like = f"%{query}%"
+        # Escape LIKE wildcards in the raw query so a literal '%' or '_' in a search
+        # (e.g. "100% Wolf") is matched literally instead of as a wildcard — otherwise
+        # a lone '_' matches every row, since it means "any single character" in LIKE.
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
         rows = self._conn.execute(
             """
             SELECT DISTINCT b.* FROM bibliographies b
             LEFT JOIN bibliography_authors ba ON ba.bibliography_id = b.id
             LEFT JOIN authors a ON a.id = ba.author_id
-            WHERE b.title LIKE ? OR b.isbn_issn LIKE ? OR a.name LIKE ?
+            WHERE b.title LIKE ? ESCAPE '\\' OR b.isbn_issn LIKE ? ESCAPE '\\' OR a.name LIKE ? ESCAPE '\\'
             ORDER BY b.title
             """,
             (like, like, like),
