@@ -38,8 +38,10 @@ class MemberView(QWidget):
         self._generate_member_id = generate_member_id
         self._members: list[Member] = []
 
-        self._table = QTableWidget(0, 4)
-        self._table.setHorizontalHeaderLabels(["ID", "Username", "Name", "Role"])
+        self._table = QTableWidget(0, 10)
+        self._table.setHorizontalHeaderLabels(
+            ["ID", "Username", "Name", "Role", "Birthdate", "Email", "Phone", "Join Date", "Expiry Date", "Address"]
+        )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -68,6 +70,12 @@ class MemberView(QWidget):
             self._table.setItem(row, 1, QTableWidgetItem(member.username))
             self._table.setItem(row, 2, QTableWidgetItem(member.name))
             self._table.setItem(row, 3, QTableWidgetItem(member.role.value))
+            self._table.setItem(row, 4, QTableWidgetItem(member.birthdate.isoformat() if member.birthdate else ""))
+            self._table.setItem(row, 5, QTableWidgetItem(member.email or ""))
+            self._table.setItem(row, 6, QTableWidgetItem(member.phone or ""))
+            self._table.setItem(row, 7, QTableWidgetItem(member.join_date.isoformat() if member.join_date else ""))
+            self._table.setItem(row, 8, QTableWidgetItem(member.expiry_date.isoformat() if member.expiry_date else ""))
+            self._table.setItem(row, 9, QTableWidgetItem(member.address or ""))
 
     def _selected_member(self) -> Member | None:
         row = self._table.currentRow()
@@ -80,9 +88,16 @@ class MemberView(QWidget):
         dialog = AddMemberDialog(suggested_id, self)
         if not dialog.exec():
             return
-        member_id, username, name, password, role = dialog.values()
         try:
-            self._create_member.execute(member_id, username, name, password, role)
+            member_id, username, name, password, role, birthdate, email, phone, expiry_date, address = (
+                dialog.values()
+            )
+            self._create_member.execute(
+                member_id, username, name, password, role, birthdate, email, phone, expiry_date, address
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "Could not add member", f"Invalid date: {error}")
+            return
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add member", str(error))
             return
@@ -96,9 +111,14 @@ class MemberView(QWidget):
         dialog = EditMemberDialog(member, self)
         if not dialog.exec():
             return
-        username, name, password = dialog.values()
         try:
-            self._edit_member.execute(member.id, username, name, password)
+            username, name, password, role, birthdate, email, phone, expiry_date, address = dialog.values()
+            self._edit_member.execute(
+                member.id, username, name, role, password, birthdate, email, phone, expiry_date, address
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "Could not edit member", f"Invalid date: {error}")
+            return
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not edit member", str(error))
             return

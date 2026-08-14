@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date
 
 from bibliosphere.domain.entities import Member, Role
 
@@ -10,16 +11,52 @@ class SqliteMemberRepository:
     def add(self, member: Member) -> Member:
         # member.id is caller-supplied (see Member's docstring), not DB-assigned.
         self._conn.execute(
-            "INSERT INTO members (id, username, name, role, password_hash, password_salt) VALUES (?, ?, ?, ?, ?, ?)",
-            (member.id, member.username, member.name, member.role.value, member.password_hash, member.password_salt),
+            """
+            INSERT INTO members (
+                id, username, name, role, password_hash, password_salt,
+                birthdate, email, phone, join_date, expiry_date, address
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                member.id,
+                member.username,
+                member.name,
+                member.role.value,
+                member.password_hash,
+                member.password_salt,
+                member.birthdate.isoformat() if member.birthdate else None,
+                member.email,
+                member.phone,
+                member.join_date.isoformat() if member.join_date else None,
+                member.expiry_date.isoformat() if member.expiry_date else None,
+                member.address,
+            ),
         )
         self._conn.commit()
         return member
 
     def update(self, member: Member) -> None:
         self._conn.execute(
-            "UPDATE members SET username = ?, name = ?, role = ?, password_hash = ?, password_salt = ? WHERE id = ?",
-            (member.username, member.name, member.role.value, member.password_hash, member.password_salt, member.id),
+            """
+            UPDATE members SET
+                username = ?, name = ?, role = ?, password_hash = ?, password_salt = ?,
+                birthdate = ?, email = ?, phone = ?, join_date = ?, expiry_date = ?, address = ?
+            WHERE id = ?
+            """,
+            (
+                member.username,
+                member.name,
+                member.role.value,
+                member.password_hash,
+                member.password_salt,
+                member.birthdate.isoformat() if member.birthdate else None,
+                member.email,
+                member.phone,
+                member.join_date.isoformat() if member.join_date else None,
+                member.expiry_date.isoformat() if member.expiry_date else None,
+                member.address,
+                member.id,
+            ),
         )
         self._conn.commit()
 
@@ -44,4 +81,10 @@ class SqliteMemberRepository:
             role=Role(row["role"]),
             password_hash=row["password_hash"],
             password_salt=row["password_salt"],
+            birthdate=date.fromisoformat(row["birthdate"]) if row["birthdate"] else None,
+            email=row["email"],
+            phone=row["phone"],
+            join_date=date.fromisoformat(row["join_date"]) if row["join_date"] else None,
+            expiry_date=date.fromisoformat(row["expiry_date"]) if row["expiry_date"] else None,
+            address=row["address"],
         )

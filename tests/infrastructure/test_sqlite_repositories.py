@@ -118,6 +118,28 @@ def test_member_repository_round_trip(conn):
     assert repo.get_by_username("alice") == added
 
 
+def test_member_repository_round_trip_with_optional_fields(conn):
+    repo = SqliteMemberRepository(conn)
+    added = repo.add(
+        Member(
+            id="M0002",
+            username="bob",
+            name="Bob",
+            role=Role.PATRON,
+            password_hash="h",
+            password_salt="s",
+            birthdate=date(1990, 1, 1),
+            email="bob@example.com",
+            phone="555-1234",
+            join_date=date.today(),
+            expiry_date=date(2027, 1, 1),
+            address="123 Main St",
+        )
+    )
+
+    assert repo.get_by_id(added.id) == added
+
+
 def test_loan_repository_open_loan_tracking(conn):
     bibliographies = SqliteBibliographyRepository(conn)
     members = SqliteMemberRepository(conn)

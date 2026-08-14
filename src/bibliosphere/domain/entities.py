@@ -22,6 +22,12 @@ class Member:
     role: Role
     password_hash: str
     password_salt: str
+    birthdate: date | None = None
+    email: str | None = None
+    phone: str | None = None
+    join_date: date | None = None
+    expiry_date: date | None = None
+    address: str | None = None
 
 
 @dataclass

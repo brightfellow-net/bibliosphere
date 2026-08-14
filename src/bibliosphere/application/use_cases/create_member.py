@@ -1,3 +1,5 @@
+from datetime import date
+
 from bibliosphere.application.security import hash_password
 from bibliosphere.domain.entities import Member, Role
 from bibliosphere.domain.exceptions import DuplicateMemberId, DuplicateUsername, InvalidMemberDetails
@@ -15,7 +17,22 @@ class CreateMember:
     def __init__(self, member_repository: MemberRepository):
         self._members = member_repository
 
-    def execute(self, member_id: str, username: str, name: str, password: str, role: Role) -> Member:
+    def execute(
+        self,
+        member_id: str,
+        username: str,
+        name: str,
+        password: str,
+        role: Role,
+        birthdate: date | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        expiry_date: date | None = None,
+        address: str | None = None,
+    ) -> Member:
+        """`join_date` is not a parameter: it is always set to today, since members are
+        created at the moment they join.
+        """
         if not member_id.strip() or not username.strip() or not name.strip() or not password:
             raise InvalidMemberDetails("Member id, username, name, and password must not be blank")
 
@@ -32,5 +49,11 @@ class CreateMember:
             role=role,
             password_hash=password_hash,
             password_salt=salt,
+            birthdate=birthdate,
+            email=email,
+            phone=phone,
+            join_date=date.today(),
+            expiry_date=expiry_date,
+            address=address,
         )
         return self._members.add(member)

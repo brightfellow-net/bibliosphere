@@ -6,7 +6,13 @@ CREATE TABLE IF NOT EXISTS members (
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('librarian', 'patron')),
     password_hash TEXT NOT NULL,
-    password_salt TEXT NOT NULL
+    password_salt TEXT NOT NULL,
+    birthdate TEXT,
+    email TEXT,
+    phone TEXT,
+    join_date TEXT,
+    expiry_date TEXT,
+    address TEXT
 );
 
 -- Column set follows data/migration/v1_biblio.sql (legacy `biblio` table), trimmed to
