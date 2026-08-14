@@ -160,22 +160,9 @@ class CatalogView(QWidget):
 
     def _on_add_bibliography(self) -> None:
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
-        dialog = AddBibliographyDialog(all_author_names, self)
-        if not dialog.exec():
-            return
-        isbn, title, series_title, edition, publish_year, call_number, authors = dialog.values()
-        try:
-            self._add_bibliography.execute(
-                title=title,
-                authors=authors,
-                call_number=call_number,
-                isbn_issn=isbn or None,
-                series_title=series_title or None,
-                edition=edition or None,
-                publish_year=publish_year or None,
-            )
-        except BibliosphereError as error:
-            QMessageBox.warning(self, "Could not add bibliography", str(error))
+        dialog = AddBibliographyDialog(self._add_bibliography, all_author_names, self)
+        dialog.exec()
+        if not dialog.any_added:
             return
         # Otherwise a leftover filter can hide the just-added bibliography with no
         # feedback that anything happened, inviting an accidental duplicate re-add.
@@ -189,41 +176,10 @@ class CatalogView(QWidget):
             QMessageBox.information(self, "No selection", "Select a bibliography first.")
             return
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
-        dialog = EditBibliographyDialog(entry, self._set_bibliography_authors, all_author_names, self)
+        dialog = EditBibliographyDialog(
+            entry, self._edit_bibliography, self._set_bibliography_authors, all_author_names, self
+        )
         if not dialog.exec():
-            return
-        isbn, title, series_title, edition, publish_year, call_number, authors = dialog.values()
-        existing = entry.bibliography
-        try:
-            # Forward the fields this dialog doesn't expose (sor, publisher_id, etc.)
-            # unchanged, so editing here can't silently null them out. `authors` here
-            # reflects whatever the dialog's "Manage Authors..." action already
-            # persisted (or the original list if untouched) — this write is therefore
-            # a harmless no-op for authors in the common case, not a second source of
-            # truth for them.
-            self._edit_bibliography.execute(
-                existing.id,
-                title=title,
-                authors=authors,
-                call_number=call_number,
-                isbn_issn=isbn or None,
-                sor=existing.sor,
-                edition=edition or None,
-                publish_year=publish_year or None,
-                collation=existing.collation,
-                series_title=series_title or None,
-                classification=existing.classification,
-                notes=existing.notes,
-                language_id=existing.language_id,
-                gmd_id=existing.gmd_id,
-                publisher_id=existing.publisher_id,
-                publish_place_id=existing.publish_place_id,
-                content_type_id=existing.content_type_id,
-                media_type_id=existing.media_type_id,
-                carrier_type_id=existing.carrier_type_id,
-            )
-        except BibliosphereError as error:
-            QMessageBox.warning(self, "Could not edit bibliography", str(error))
             return
         self.refresh()
 

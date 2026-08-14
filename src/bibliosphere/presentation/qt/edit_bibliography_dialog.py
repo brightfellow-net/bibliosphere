@@ -12,15 +12,22 @@ from PySide6.QtWidgets import (
 )
 
 from bibliosphere.application.dto import CatalogEntry
+from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.presentation.qt.manage_authors_dialog import ManageAuthorsDialog
 
 
 class EditBibliographyDialog(QDialog):
+    """Stays open and shows the error on invalid input, instead of closing on OK and
+    leaving the caller to report the failure after the fields are already gone —
+    the use case is called (and can be retried) from within this dialog.
+    """
+
     def __init__(
         self,
         entry: CatalogEntry,
+        edit_bibliography: EditBibliography,
         set_bibliography_authors: SetBibliographyAuthors | None = None,
         all_author_names: list[str] = (),
         parent: QWidget | None = None,
@@ -28,25 +35,26 @@ class EditBibliographyDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Edit Bibliography")
         self.resize(480, 240)
-        self._bibliography_id = entry.bibliography.id
+        self._bibliography = entry.bibliography
+        self._edit_bibliography = edit_bibliography
         self._set_bibliography_authors = set_bibliography_authors
         self._all_author_names = list(all_author_names)
         self._current_authors = [credit.author.name for credit in entry.authors]
 
-        self._isbn = QLineEdit(entry.bibliography.isbn_issn or "")
+        self._call_number = QLineEdit(entry.bibliography.call_number or "")
         self._title = QLineEdit(entry.bibliography.title)
+        self._isbn = QLineEdit(entry.bibliography.isbn_issn or "")
         self._series_title = QLineEdit(entry.bibliography.series_title or "")
         self._edition = QLineEdit(entry.bibliography.edition or "")
         self._publish_year = QLineEdit(entry.bibliography.publish_year or "")
-        self._call_number = QLineEdit(entry.bibliography.call_number or "")
 
         form = QFormLayout()
-        form.addRow("ISBN/ISSN:", self._isbn)
+        form.addRow("Call Number:", self._call_number)
         form.addRow("Title:", self._title)
+        form.addRow("ISBN/ISSN:", self._isbn)
         form.addRow("Series Title:", self._series_title)
         form.addRow("Edition:", self._edition)
         form.addRow("Publish Year:", self._publish_year)
-        form.addRow("Call Number:", self._call_number)
 
         self._authors_label = QLabel()
         self._authors_label.setWordWrap(True)
@@ -60,7 +68,7 @@ class EditBibliographyDialog(QDialog):
         authors_row.addWidget(manage_authors_button)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self._on_ok_clicked)
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
@@ -84,20 +92,43 @@ class EditBibliographyDialog(QDialog):
             # staged-until-OK approach — persist immediately: the author list is a
             # fully separate, independently-committed action from the rest of this
             # dialog's fields, taking effect even if the outer edit is then cancelled.
-            self._set_bibliography_authors.execute(self._bibliography_id, new_authors)
+            self._set_bibliography_authors.execute(self._bibliography.id, new_authors)
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not update authors", str(error))
             return
         self._current_authors = new_authors
         self._update_authors_label()
 
-    def values(self) -> tuple[str, str, str, str, str, str, list[str]]:
-        return (
-            self._isbn.text().strip(),
-            self._title.text().strip(),
-            self._series_title.text().strip(),
-            self._edition.text().strip(),
-            self._publish_year.text().strip(),
-            self._call_number.text().strip(),
-            self._current_authors,
-        )
+    def _on_ok_clicked(self) -> None:
+        existing = self._bibliography
+        try:
+            # Forward the fields this dialog doesn't expose (sor, publisher_id, etc.)
+            # unchanged, so editing here can't silently null them out. `authors` here
+            # reflects whatever "Manage Authors..." already persisted (or the original
+            # list if untouched) — this write is therefore a harmless no-op for authors
+            # in the common case, not a second source of truth for them.
+            self._edit_bibliography.execute(
+                existing.id,
+                title=self._title.text().strip(),
+                authors=self._current_authors,
+                call_number=self._call_number.text().strip(),
+                isbn_issn=self._isbn.text().strip() or None,
+                sor=existing.sor,
+                edition=self._edition.text().strip() or None,
+                publish_year=self._publish_year.text().strip() or None,
+                collation=existing.collation,
+                series_title=self._series_title.text().strip() or None,
+                classification=existing.classification,
+                notes=existing.notes,
+                language_id=existing.language_id,
+                gmd_id=existing.gmd_id,
+                publisher_id=existing.publisher_id,
+                publish_place_id=existing.publish_place_id,
+                content_type_id=existing.content_type_id,
+                media_type_id=existing.media_type_id,
+                carrier_type_id=existing.carrier_type_id,
+            )
+        except BibliosphereError as error:
+            QMessageBox.warning(self, "Could not edit bibliography", str(error))
+            return
+        self.accept()

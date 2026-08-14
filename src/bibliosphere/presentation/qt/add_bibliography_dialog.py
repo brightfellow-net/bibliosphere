@@ -5,36 +5,54 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from bibliosphere.application.use_cases.add_bibliography import AddBibliography
+from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.presentation.qt.manage_authors_dialog import ManageAuthorsDialog
 
 
 class AddBibliographyDialog(QDialog):
-    def __init__(self, all_author_names: list[str] = (), parent: QWidget | None = None):
+    """OK never closes this dialog on its own — the use case is called (and can be
+    retried) from within the dialog itself:
+
+    - Invalid input: shows the error and stays open with the fields as entered.
+    - Valid input: adds the bibliography, then clears the fields and stays open so a
+      librarian can keep entering books back-to-back without reopening the dialog.
+
+    Only Cancel (or closing the window) ends the dialog; `any_added` tells the caller
+    whether to refresh, since a successful add no longer shows up as an accepted exec().
+    """
+
+    def __init__(
+        self, add_bibliography: AddBibliography, all_author_names: list[str] = (), parent: QWidget | None = None
+    ):
         super().__init__(parent)
         self.setWindowTitle("Add Bibliography")
         self.resize(480, 240)
+        self._add_bibliography = add_bibliography
         self._all_author_names = list(all_author_names)
         self._authors: list[str] = []
+        self.any_added = False
 
-        self._isbn = QLineEdit()
+        self._call_number = QLineEdit()
         self._title = QLineEdit()
+        self._isbn = QLineEdit()
         self._series_title = QLineEdit()
         self._edition = QLineEdit()
         self._publish_year = QLineEdit()
-        self._call_number = QLineEdit()
 
         form = QFormLayout()
-        form.addRow("ISBN/ISSN:", self._isbn)
+        form.addRow("Call Number:", self._call_number)
         form.addRow("Title:", self._title)
+        form.addRow("ISBN/ISSN:", self._isbn)
         form.addRow("Series Title:", self._series_title)
         form.addRow("Edition:", self._edition)
         form.addRow("Publish Year:", self._publish_year)
-        form.addRow("Call Number:", self._call_number)
 
         self._authors_label = QLabel()
         self._authors_label.setWordWrap(True)
@@ -47,7 +65,7 @@ class AddBibliographyDialog(QDialog):
         authors_row.addWidget(manage_authors_button)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self._on_ok_clicked)
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
@@ -69,13 +87,33 @@ class AddBibliographyDialog(QDialog):
         self._authors = dialog.values()
         self._update_authors_label()
 
-    def values(self) -> tuple[str, str, str, str, str, str, list[str]]:
-        return (
-            self._isbn.text().strip(),
-            self._title.text().strip(),
-            self._series_title.text().strip(),
-            self._edition.text().strip(),
-            self._publish_year.text().strip(),
-            self._call_number.text().strip(),
-            self._authors,
-        )
+    def _on_ok_clicked(self) -> None:
+        try:
+            self._add_bibliography.execute(
+                title=self._title.text().strip(),
+                authors=self._authors,
+                call_number=self._call_number.text().strip(),
+                isbn_issn=self._isbn.text().strip() or None,
+                series_title=self._series_title.text().strip() or None,
+                edition=self._edition.text().strip() or None,
+                publish_year=self._publish_year.text().strip() or None,
+            )
+        except BibliosphereError as error:
+            QMessageBox.warning(self, "Could not add bibliography", str(error))
+            return
+        self.any_added = True
+        self._reset_fields()
+
+    def _reset_fields(self) -> None:
+        for field in (
+            self._call_number,
+            self._title,
+            self._isbn,
+            self._series_title,
+            self._edition,
+            self._publish_year,
+        ):
+            field.clear()
+        self._authors = []
+        self._update_authors_label()
+        self._call_number.setFocus()
