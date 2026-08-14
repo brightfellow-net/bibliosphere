@@ -80,14 +80,24 @@ class CheckoutView(QWidget):
         return box
 
     def refresh(self) -> None:
+        # Rebuilding a combo box resets its selection to index 0, which would otherwise
+        # silently swap the selected bibliography/member for a different one on every
+        # refresh (e.g. right after a checkout) without the librarian noticing — risking
+        # the next checkout going to the wrong person. Restore the previous selection by
+        # id so it only changes when the librarian deliberately picks something else.
+        previous_bibliography_id = self._bibliography_combo.currentData()
+        previous_member_id = self._member_combo.currentData()
+
         self._bibliography_combo.clear()
         for entry in self._search_catalog.execute(""):
             label = f"{entry.bibliography.title} ({entry.available_items}/{entry.total_items} available)"
             self._bibliography_combo.addItem(label, entry.bibliography.id)
+        self._restore_combo_selection(self._bibliography_combo, previous_bibliography_id)
 
         self._member_combo.clear()
         for member in self._list_members.execute():
             self._member_combo.addItem(f"{member.name} ({member.username})", member.id)
+        self._restore_combo_selection(self._member_combo, previous_member_id)
 
         self._loan_views = self._list_open_loans.execute()
         self._loans_table.setRowCount(len(self._loan_views))
@@ -95,6 +105,14 @@ class CheckoutView(QWidget):
             self._loans_table.setItem(row, 0, QTableWidgetItem(view.bibliography_title))
             self._loans_table.setItem(row, 1, QTableWidgetItem(view.member_name))
             self._loans_table.setItem(row, 2, QTableWidgetItem(view.loan.due_date.isoformat()))
+
+    @staticmethod
+    def _restore_combo_selection(combo: QComboBox, data_id: object) -> None:
+        if data_id is None:
+            return
+        index = combo.findData(data_id)
+        if index >= 0:
+            combo.setCurrentIndex(index)
 
     def _on_checkout(self) -> None:
         bibliography_id = self._bibliography_combo.currentData()
