@@ -13,6 +13,7 @@ class EditBibliographyDialog(QDialog):
         self._title = QLineEdit(entry.bibliography.title)
         self._authors = QLineEdit(entry.author_names)
         self._edition = QLineEdit(entry.bibliography.edition or "")
+        self._publish_year = QLineEdit(entry.bibliography.publish_year or "")
         self._call_number = QLineEdit(entry.bibliography.call_number or "")
 
         form = QFormLayout()
@@ -20,6 +21,7 @@ class EditBibliographyDialog(QDialog):
         form.addRow("Title:", self._title)
         form.addRow("Authors (comma-separated):", self._authors)
         form.addRow("Edition:", self._edition)
+        form.addRow("Publish Year:", self._publish_year)
         form.addRow("Call Number:", self._call_number)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -30,12 +32,13 @@ class EditBibliographyDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
 
-    def values(self) -> tuple[str, str, list[str], str, str]:
+    def values(self) -> tuple[str, str, list[str], str, str, str]:
         authors = [name.strip() for name in self._authors.text().split(",") if name.strip()]
         return (
             self._isbn.text().strip(),
             self._title.text().strip(),
             authors,
             self._edition.text().strip(),
+            self._publish_year.text().strip(),
             self._call_number.text().strip(),
         )
