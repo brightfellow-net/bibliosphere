@@ -196,6 +196,9 @@ class CheckoutView(QWidget):
             QMessageBox.warning(self, "Could not check out", str(error))
             return
         QMessageBox.information(self, "Checked out", f"Due back {loan.due_date.isoformat()}.")
+        # Otherwise the just-checked-out (now unavailable) book is left selected, and
+        # its stale call number invites checking out the same title again by accident.
+        self._bibliography_input.clear()
         self.refresh()
 
     def _on_return(self) -> None:
