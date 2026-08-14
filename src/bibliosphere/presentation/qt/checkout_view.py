@@ -145,10 +145,11 @@ class CheckoutView(QWidget):
         self._update_selected_member_label()
 
     def _populate_loans_table(self, member: Member | None) -> None:
-        # Blank/unresolved input shows every open loan (the original behavior); a
-        # resolved member narrows the Return table to just their outstanding loans.
+        # Empty, i.e. no resolved member (whether the field is blank or just doesn't
+        # match one yet), shows nothing — the table only ever lists one specific
+        # member's outstanding loans, never everyone's at once.
         self._displayed_loans = (
-            self._loan_views if member is None else [v for v in self._loan_views if v.loan.member_id == member.id]
+            [] if member is None else [v for v in self._loan_views if v.loan.member_id == member.id]
         )
         self._loans_table.setRowCount(len(self._displayed_loans))
         for row, view in enumerate(self._displayed_loans):
