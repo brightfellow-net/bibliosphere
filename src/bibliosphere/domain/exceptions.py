@@ -14,6 +14,14 @@ class DuplicateIsbn(BibliosphereError):
     """Raised when adding a bibliography whose ISBN is already in the catalog."""
 
 
+class DuplicateCallNumber(BibliosphereError):
+    """Raised when a bibliography's call number is already used by another one."""
+
+
+class InvalidBibliographyDetails(BibliosphereError):
+    """Raised when a bibliography's call number is blank."""
+
+
 class DuplicateUsername(BibliosphereError):
     """Raised when creating a member whose username is already taken."""
 

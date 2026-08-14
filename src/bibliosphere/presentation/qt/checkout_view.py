@@ -1,9 +1,13 @@
+from PySide6.QtCore import Qt, QStringListModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QCompleter,
     QFormLayout,
     QGroupBox,
     QHeaderView,
+    QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -12,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bibliosphere.application.dto import LoanView
+from bibliosphere.application.dto import CatalogEntry, LoanView
 from bibliosphere.application.use_cases.checkout_item import CheckoutItem
 from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
@@ -40,6 +44,9 @@ class CheckoutView(QWidget):
         self._list_open_loans = list_open_loans
         self._return_item = return_item
         self._loan_views: list[LoanView] = []
+        # Keyed by "<call number> — <title>" (call numbers are unique and mandatory),
+        # so the input box's exact text always resolves unambiguously to one entry.
+        self._entry_by_display_text: dict[str, CatalogEntry] = {}
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._build_checkout_box())
@@ -49,13 +56,26 @@ class CheckoutView(QWidget):
 
     def _build_checkout_box(self) -> QGroupBox:
         box = QGroupBox("Check Out")
-        self._bibliography_combo = QComboBox()
+
+        self._bibliography_input = QLineEdit()
+        self._bibliography_input.setPlaceholderText("Call number...")
+        self._bibliography_completer_model = QStringListModel()
+        completer = QCompleter(self._bibliography_completer_model, self)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._bibliography_input.setCompleter(completer)
+        self._bibliography_input.textChanged.connect(self._update_selected_book_label)
+
+        self._selected_book_label = QLabel()
+        self._update_selected_book_label()
+
         self._member_combo = QComboBox()
         checkout_button = QPushButton("Check Out")
         checkout_button.clicked.connect(self._on_checkout)
 
         form = QFormLayout()
-        form.addRow("Bibliography:", self._bibliography_combo)
+        form.addRow("Call Number:", self._bibliography_input)
+        form.addRow(self._selected_book_label)
         form.addRow("Member:", self._member_combo)
         form.addRow(checkout_button)
         box.setLayout(form)
@@ -81,18 +101,20 @@ class CheckoutView(QWidget):
 
     def refresh(self) -> None:
         # Rebuilding a combo box resets its selection to index 0, which would otherwise
-        # silently swap the selected bibliography/member for a different one on every
-        # refresh (e.g. right after a checkout) without the librarian noticing — risking
-        # the next checkout going to the wrong person. Restore the previous selection by
-        # id so it only changes when the librarian deliberately picks something else.
-        previous_bibliography_id = self._bibliography_combo.currentData()
+        # silently swap the selected member for a different one on every refresh (e.g.
+        # right after a checkout) without the librarian noticing — risking the next
+        # checkout going to the wrong person. Restore the previous selection by id so
+        # it only changes when the librarian deliberately picks something else. (The
+        # call number QLineEdit doesn't have this problem: its text is untouched by
+        # refresh(), so a typed/selected value simply persists on its own.)
         previous_member_id = self._member_combo.currentData()
 
-        self._bibliography_combo.clear()
+        self._entry_by_display_text = {}
         for entry in self._search_catalog.execute(""):
-            label = f"{entry.bibliography.title} ({entry.available_items}/{entry.total_items} available)"
-            self._bibliography_combo.addItem(label, entry.bibliography.id)
-        self._restore_combo_selection(self._bibliography_combo, previous_bibliography_id)
+            display = f"{entry.bibliography.call_number} — {entry.bibliography.title}"
+            self._entry_by_display_text[display] = entry
+        self._bibliography_completer_model.setStringList(sorted(self._entry_by_display_text))
+        self._update_selected_book_label()
 
         self._member_combo.clear()
         for member in self._list_members.execute():
@@ -106,6 +128,19 @@ class CheckoutView(QWidget):
             self._loans_table.setItem(row, 1, QTableWidgetItem(view.member_name))
             self._loans_table.setItem(row, 2, QTableWidgetItem(view.loan.due_date.isoformat()))
 
+    def _update_selected_book_label(self) -> None:
+        # Lets the librarian visually confirm the title/availability before checking
+        # out, rather than trusting the call number alone.
+        entry = self._entry_by_display_text.get(self._bibliography_input.text().strip())
+        if entry is None:
+            self._selected_book_label.setText("No matching book selected.")
+            self._selected_book_label.setStyleSheet("color: gray;")
+        else:
+            self._selected_book_label.setText(
+                f"{entry.bibliography.title} — {entry.available_items}/{entry.total_items} available"
+            )
+            self._selected_book_label.setStyleSheet("")
+
     @staticmethod
     def _restore_combo_selection(combo: QComboBox, data_id: object) -> None:
         if data_id is None:
@@ -115,13 +150,15 @@ class CheckoutView(QWidget):
             combo.setCurrentIndex(index)
 
     def _on_checkout(self) -> None:
-        bibliography_id = self._bibliography_combo.currentData()
+        entry = self._entry_by_display_text.get(self._bibliography_input.text().strip())
         member_id = self._member_combo.currentData()
-        if bibliography_id is None or member_id is None:
-            QMessageBox.information(self, "Nothing to check out", "Add a bibliography and a member first.")
+        if entry is None or member_id is None:
+            QMessageBox.information(
+                self, "Nothing to check out", "Select a book by call number and a member first."
+            )
             return
         try:
-            loan = self._checkout_item.execute(bibliography_id, member_id)
+            loan = self._checkout_item.execute(entry.bibliography.id, member_id)
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not check out", str(error))
             return

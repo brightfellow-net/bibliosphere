@@ -1,5 +1,10 @@
 from bibliosphere.domain.entities import Bibliography
-from bibliosphere.domain.exceptions import BibliographyNotFound, DuplicateIsbn
+from bibliosphere.domain.exceptions import (
+    BibliographyNotFound,
+    DuplicateCallNumber,
+    DuplicateIsbn,
+    InvalidBibliographyDetails,
+)
 from bibliosphere.domain.ports import AuthorRepository, BibliographyRepository, UnitOfWork
 
 
@@ -19,13 +24,14 @@ class EditBibliography:
         bibliography_id: int,
         title: str,
         authors: list[str],
+        *,
+        call_number: str,
         isbn_issn: str | None = None,
         sor: str | None = None,
         edition: str | None = None,
         publish_year: str | None = None,
         collation: str | None = None,
         series_title: str | None = None,
-        call_number: str | None = None,
         classification: str | None = None,
         notes: str | None = None,
         language_id: str = "en",
@@ -36,9 +42,16 @@ class EditBibliography:
         media_type_id: int | None = None,
         carrier_type_id: int | None = None,
     ) -> Bibliography:
+        if not call_number or not call_number.strip():
+            raise InvalidBibliographyDetails("Call number must not be blank")
+
         existing = self._bibliographies.get_by_id(bibliography_id)
         if existing is None:
             raise BibliographyNotFound(f"No bibliography with id {bibliography_id}")
+
+        other_by_call_number = self._bibliographies.get_by_call_number(call_number)
+        if other_by_call_number is not None and other_by_call_number.id != bibliography_id:
+            raise DuplicateCallNumber(f"A bibliography with call number {call_number!r} already exists")
 
         if isbn_issn:
             other = self._bibliographies.get_by_isbn(isbn_issn)

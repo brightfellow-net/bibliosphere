@@ -168,11 +168,11 @@ class CatalogView(QWidget):
             self._add_bibliography.execute(
                 title=title,
                 authors=authors,
+                call_number=call_number,
                 isbn_issn=isbn or None,
                 series_title=series_title or None,
                 edition=edition or None,
                 publish_year=publish_year or None,
-                call_number=call_number or None,
             )
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add bibliography", str(error))
@@ -205,13 +205,13 @@ class CatalogView(QWidget):
                 existing.id,
                 title=title,
                 authors=authors,
+                call_number=call_number,
                 isbn_issn=isbn or None,
                 sor=existing.sor,
                 edition=edition or None,
                 publish_year=publish_year or None,
                 collation=existing.collation,
                 series_title=series_title or None,
-                call_number=call_number or None,
                 classification=existing.classification,
                 notes=existing.notes,
                 language_id=existing.language_id,

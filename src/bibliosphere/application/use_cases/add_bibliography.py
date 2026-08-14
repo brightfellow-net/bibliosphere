@@ -1,5 +1,5 @@
 from bibliosphere.domain.entities import Bibliography
-from bibliosphere.domain.exceptions import DuplicateIsbn
+from bibliosphere.domain.exceptions import DuplicateCallNumber, DuplicateIsbn, InvalidBibliographyDetails
 from bibliosphere.domain.ports import AuthorRepository, BibliographyRepository, UnitOfWork
 
 
@@ -18,13 +18,14 @@ class AddBibliography:
         self,
         title: str,
         authors: list[str],
+        *,
+        call_number: str,
         isbn_issn: str | None = None,
         sor: str | None = None,
         edition: str | None = None,
         publish_year: str | None = None,
         collation: str | None = None,
         series_title: str | None = None,
-        call_number: str | None = None,
         classification: str | None = None,
         notes: str | None = None,
         language_id: str = "en",
@@ -35,6 +36,11 @@ class AddBibliography:
         media_type_id: int | None = None,
         carrier_type_id: int | None = None,
     ) -> Bibliography:
+        if not call_number or not call_number.strip():
+            raise InvalidBibliographyDetails("Call number must not be blank")
+        if self._bibliographies.get_by_call_number(call_number) is not None:
+            raise DuplicateCallNumber(f"A bibliography with call number {call_number!r} already exists")
+
         if isbn_issn and self._bibliographies.get_by_isbn(isbn_issn) is not None:
             raise DuplicateIsbn(f"A bibliography with ISBN/ISSN {isbn_issn!r} already exists")
 

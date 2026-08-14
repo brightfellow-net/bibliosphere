@@ -31,10 +31,11 @@ def conn():
 def test_bibliography_repository_round_trip(conn):
     repo = SqliteBibliographyRepository(conn)
     authors = SqliteAuthorRepository(conn)
-    added = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123"))
+    added = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
 
     assert repo.get_by_id(added.id) == added
     assert repo.get_by_isbn("123") == added
+    assert repo.get_by_call_number("813.54 HER") == added
     assert repo.search("Dune") == [added]
 
     herbert = authors.add(Author(id=None, name="Herbert"))
@@ -54,8 +55,8 @@ def test_bibliography_repository_round_trip(conn):
 
 def test_search_escapes_like_wildcards_in_query(conn):
     repo = SqliteBibliographyRepository(conn)
-    dune = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123"))
-    wolf = repo.add(Bibliography(id=None, title="100% Wolf", isbn_issn="456"))
+    dune = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="CN-1"))
+    wolf = repo.add(Bibliography(id=None, title="100% Wolf", isbn_issn="456", call_number="CN-2"))
 
     # A literal '_' shouldn't match every row via LIKE's single-character wildcard.
     assert repo.search("_") == []
@@ -70,7 +71,7 @@ def test_uow_rolls_back_all_writes_on_failure(conn):
 
     with pytest.raises(RuntimeError):
         with uow:
-            repo.add(Bibliography(id=None, title="Ghost"))
+            repo.add(Bibliography(id=None, title="Ghost", call_number="CN-GHOST"))
             raise RuntimeError("simulated failure mid-transaction")
 
     assert repo.list_all() == []
@@ -82,7 +83,7 @@ def test_add_bibliography_rolls_back_on_author_failure(conn):
     use_case = AddBibliography(bibliographies, _FailingAuthorRepository(), uow)
 
     with pytest.raises(RuntimeError):
-        use_case.execute(title="Ghost", authors=["Someone"])
+        use_case.execute(title="Ghost", authors=["Someone"], call_number="CN-GHOST")
 
     # The bibliography insert that happened before the failure must not have leaked.
     assert bibliographies.list_all() == []
@@ -94,12 +95,12 @@ def test_edit_bibliography_rolls_back_partial_update_on_failure(conn):
     uow = SqliteUnitOfWork(conn)
 
     added = AddBibliography(bibliographies, authors, uow).execute(
-        title="Original", authors=["Real Author"], isbn_issn="111"
+        title="Original", authors=["Real Author"], call_number="CN-ORIGINAL", isbn_issn="111"
     )
 
     edit_use_case = EditBibliography(bibliographies, _FailingAuthorRepository(), uow)
     with pytest.raises(RuntimeError):
-        edit_use_case.execute(added.id, title="Edited Title", authors=["X"], isbn_issn="111")
+        edit_use_case.execute(added.id, title="Edited Title", authors=["X"], call_number="CN-ORIGINAL", isbn_issn="111")
 
     # The title UPDATE that happened before the failure must not have leaked either.
     reloaded = bibliographies.get_by_id(added.id)
@@ -122,7 +123,7 @@ def test_loan_repository_open_loan_tracking(conn):
     members = SqliteMemberRepository(conn)
     loans = SqliteLoanRepository(conn)
 
-    bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123"))
+    bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
     item = bibliographies.add_item(bibliography.id)
     member = members.add(
         Member(id=None, username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")

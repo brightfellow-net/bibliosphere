@@ -37,6 +37,9 @@ class FakeBibliographyRepository:
     def get_by_isbn(self, isbn: str) -> Bibliography | None:
         return next((b for b in self._bibliographies.values() if b.isbn_issn == isbn), None)
 
+    def get_by_call_number(self, call_number: str) -> Bibliography | None:
+        return next((b for b in self._bibliographies.values() if b.call_number == call_number), None)
+
     def search(self, query: str) -> list[Bibliography]:
         query = query.lower()
 

@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS bibliographies (
     publish_year TEXT,
     collation TEXT,
     series_title TEXT,
-    call_number TEXT,
+    call_number TEXT NOT NULL,
     classification TEXT,
     notes TEXT,
     language_id TEXT NOT NULL DEFAULT 'en',

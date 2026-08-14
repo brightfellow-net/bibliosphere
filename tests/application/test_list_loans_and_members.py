@@ -13,9 +13,9 @@ _isbn_counter = count(100)
 
 
 def _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=1):
-    isbn = f"isbn-{next(_isbn_counter)}"
+    n = next(_isbn_counter)
     bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
-        isbn_issn=isbn, title="Dune", authors=["Herbert"]
+        isbn_issn=f"isbn-{n}", title="Dune", authors=["Herbert"], call_number=f"cn-{n}"
     )
     for _ in range(n_items):
         AddItem(bibliography_repo).execute(bibliography.id)

@@ -55,6 +55,10 @@ class SqliteBibliographyRepository:
         row = self._conn.execute("SELECT * FROM bibliographies WHERE isbn_issn = ?", (isbn,)).fetchone()
         return self._row_to_bibliography(row) if row else None
 
+    def get_by_call_number(self, call_number: str) -> Bibliography | None:
+        row = self._conn.execute("SELECT * FROM bibliographies WHERE call_number = ?", (call_number,)).fetchone()
+        return self._row_to_bibliography(row) if row else None
+
     def search(self, query: str) -> list[Bibliography]:
         # Escape LIKE wildcards in the raw query so a literal '%' or '_' in a search
         # (e.g. "100% Wolf") is matched literally instead of as a wildcard — otherwise
