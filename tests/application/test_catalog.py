@@ -55,6 +55,24 @@ def test_add_bibliography_rejects_duplicate_call_number(bibliography_repo, autho
         use_case.execute(title="B", authors=["Y"], call_number="CN-1")
 
 
+def test_add_bibliography_creates_initial_copies(bibliography_repo, author_repo, unit_of_work):
+    use_case = AddBibliography(bibliography_repo, author_repo, unit_of_work)
+    result = use_case.execute(title="A", authors=["X"], call_number="CN-2", initial_copies=3)
+    assert len(bibliography_repo.list_items(result.id)) == 3
+
+
+def test_add_bibliography_defaults_to_no_copies(bibliography_repo, author_repo, unit_of_work):
+    use_case = AddBibliography(bibliography_repo, author_repo, unit_of_work)
+    result = use_case.execute(title="A", authors=["X"], call_number="CN-2b")
+    assert bibliography_repo.list_items(result.id) == []
+
+
+def test_add_bibliography_rejects_negative_initial_copies(bibliography_repo, author_repo, unit_of_work):
+    use_case = AddBibliography(bibliography_repo, author_repo, unit_of_work)
+    with pytest.raises(InvalidBibliographyDetails):
+        use_case.execute(title="A", authors=["X"], call_number="CN-2c", initial_copies=-1)
+
+
 def test_edit_bibliography(bibliography_repo, author_repo, unit_of_work):
     added = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         title="A", authors=["X"], call_number="CN-1", isbn_issn="123"

@@ -104,6 +104,15 @@ class FakeBibliographyRepository:
         self._items[new_id] = item
         return item
 
+    def add_items(self, bibliography_id: int, count: int) -> list[Item]:
+        items = []
+        for _ in range(count):
+            new_id = next(self._item_ids)
+            item = Item(id=new_id, bibliography_id=bibliography_id)
+            self._items[new_id] = item
+            items.append(item)
+        return items
+
     def remove_item(self, item_id: int) -> None:
         self._items.pop(item_id, None)
 

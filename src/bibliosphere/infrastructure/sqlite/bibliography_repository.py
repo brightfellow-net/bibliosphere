@@ -159,6 +159,15 @@ class SqliteBibliographyRepository:
         self._conn.commit()
         return Item(id=cursor.lastrowid, bibliography_id=bibliography_id)
 
+    def add_items(self, bibliography_id: int, count: int) -> list[Item]:
+        # No commit here — see add()'s note; AddBibliography controls the transaction
+        # so the initial copies land atomically with the bibliography they belong to.
+        items = []
+        for _ in range(count):
+            cursor = self._conn.execute("INSERT INTO items (bibliography_id) VALUES (?)", (bibliography_id,))
+            items.append(Item(id=cursor.lastrowid, bibliography_id=bibliography_id))
+        return items
+
     def remove_item(self, item_id: int) -> None:
         self._conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
         self._conn.commit()

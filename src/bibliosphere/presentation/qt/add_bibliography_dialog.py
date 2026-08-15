@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -49,6 +50,9 @@ class AddBibliographyDialog(QDialog):
         self._series_title = QLineEdit()
         self._edition = QLineEdit()
         self._publish_year = QLineEdit()
+        self._initial_copies = QSpinBox()
+        self._initial_copies.setRange(0, 999)
+        self._initial_copies.setValue(1)
 
         form = QFormLayout()
         form.addRow("Call Number:", self._call_number)
@@ -57,6 +61,7 @@ class AddBibliographyDialog(QDialog):
         form.addRow("Series Title:", self._series_title)
         form.addRow("Edition:", self._edition)
         form.addRow("Publish Year:", self._publish_year)
+        form.addRow("Initial Copies:", self._initial_copies)
 
         self._authors_label = QLabel()
         self._authors_label.setWordWrap(True)
@@ -109,6 +114,7 @@ class AddBibliographyDialog(QDialog):
                 series_title=self._series_title.text().strip() or None,
                 edition=self._edition.text().strip() or None,
                 publish_year=self._publish_year.text().strip() or None,
+                initial_copies=self._initial_copies.value(),
             )
         except BibliosphereError as error:
             self._set_status(str(error), is_error=True)
@@ -127,6 +133,7 @@ class AddBibliographyDialog(QDialog):
             self._publish_year,
         ):
             field.clear()
+        self._initial_copies.setValue(1)
         self._authors = []
         self._update_authors_label()
         self._call_number.setFocus()
