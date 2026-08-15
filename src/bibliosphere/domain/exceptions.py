@@ -26,6 +26,15 @@ class BibliographyHasItems(BibliosphereError):
     """Raised when deleting a bibliography that still has one or more items."""
 
 
+class ItemHasLoanHistory(BibliosphereError):
+    """Raised when removing an item that has ever been loaned (open or returned).
+
+    The `loans.item_id` foreign key would otherwise reject the delete outright once
+    any loan references the item — this surfaces that as a clean, catchable error
+    instead of an unhandled IntegrityError.
+    """
+
+
 class DuplicateUsername(BibliosphereError):
     """Raised when creating a member whose username is already taken."""
 

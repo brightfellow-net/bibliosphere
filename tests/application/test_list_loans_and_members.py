@@ -10,6 +10,7 @@ from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
 from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.domain.entities import Role
+from bibliosphere.domain.ports import LoanHistoryFilters
 
 _isbn_counter = count(100)
 _member_id_counter = count(100)
@@ -63,8 +64,36 @@ def test_loan_history_includes_open_and_returned_loans_for_all_members(
     checkout.execute(bibliography.id, bob.id)
     ReturnItem(loan_repo).execute(alice_loan.id)
 
-    views = ListLoanHistory(loan_repo, bibliography_repo, member_repo).execute()
+    result = ListLoanHistory(loan_repo, bibliography_repo, member_repo).execute(
+        LoanHistoryFilters(), page=1, page_size=200
+    )
 
-    assert {view.member_name for view in views} == {"Alice", "Bob"}
-    statuses = {view.member_name: view.loan.is_open for view in views}
+    assert result.total_count == 2
+    assert {view.member_name for view in result.views} == {"Alice", "Bob"}
+    statuses = {view.member_name: view.loan.is_open for view in result.views}
     assert statuses == {"Alice": False, "Bob": True}
+
+
+def test_loan_history_paginates_and_filters(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
+    bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=5)
+    alice = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
+    checkout = CheckoutItem(bibliography_repo, member_repo, loan_repo)
+    for _ in range(5):
+        checkout.execute(bibliography.id, alice.id)
+
+    history = ListLoanHistory(loan_repo, bibliography_repo, member_repo)
+
+    page1 = history.execute(LoanHistoryFilters(), page=1, page_size=2)
+    assert page1.total_count == 5
+    assert page1.total_pages == 3
+    assert len(page1.views) == 2
+
+    page3 = history.execute(LoanHistoryFilters(), page=3, page_size=2)
+    assert len(page3.views) == 1
+
+    filtered = history.execute(LoanHistoryFilters(member_name="ali"), page=1, page_size=200)
+    assert filtered.total_count == 5
+
+    no_match = history.execute(LoanHistoryFilters(member_name="bob"), page=1, page_size=200)
+    assert no_match.total_count == 0
+    assert no_match.views == []

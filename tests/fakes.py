@@ -7,6 +7,7 @@ from dataclasses import replace
 from itertools import count
 
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
+from bibliosphere.domain.ports import LoanHistoryFilters
 
 
 class FakeBibliographyRepository:
@@ -151,9 +152,19 @@ class FakeMemberRepository:
 
 
 class FakeLoanRepository:
-    def __init__(self):
+    """Resolves item/member ids to titles/names via the given fakes, mirroring how
+    SqliteLoanRepository's history query LEFT JOINs to items/bibliographies/members.
+    """
+
+    def __init__(
+        self,
+        bibliography_repository: "FakeBibliographyRepository | None" = None,
+        member_repository: "FakeMemberRepository | None" = None,
+    ):
         self._loans: dict[int, Loan] = {}
         self._ids = count(1)
+        self._bibliographies_repo = bibliography_repository
+        self._members_repo = member_repository
 
     def add(self, loan: Loan) -> Loan:
         new_id = next(self._ids)
@@ -177,14 +188,54 @@ class FakeLoanRepository:
     def get_open_loan_for_item(self, item_id: int) -> Loan | None:
         return next((loan for loan in self._loans.values() if loan.item_id == item_id and loan.is_open), None)
 
+    def has_any_loan_for_item(self, item_id: int) -> bool:
+        return any(loan.item_id == item_id for loan in self._loans.values())
+
     def list_open_loans_for_member(self, member_id: str) -> list[Loan]:
         return [loan for loan in self._loans.values() if loan.member_id == member_id and loan.is_open]
 
     def list_all_open_loans(self) -> list[Loan]:
         return [loan for loan in self._loans.values() if loan.is_open]
 
-    def list_all(self) -> list[Loan]:
-        return sorted(self._loans.values(), key=lambda loan: (loan.checkout_date, loan.id), reverse=True)
-
     def count_open_loans_for_member(self, member_id: str) -> int:
         return len(self.list_open_loans_for_member(member_id))
+
+    def _title_for(self, loan: Loan) -> str:
+        item = self._bibliographies_repo.get_item(loan.item_id) if self._bibliographies_repo else None
+        bibliography = self._bibliographies_repo.get_by_id(item.bibliography_id) if item else None
+        return bibliography.title if bibliography else "Unknown"
+
+    def _member_name_for(self, loan: Loan) -> str:
+        member = self._members_repo.get_by_id(loan.member_id) if self._members_repo else None
+        return member.name if member else "Unknown"
+
+    def _matches_history_filters(self, loan: Loan, filters: LoanHistoryFilters) -> bool:
+        if filters.member_id and filters.member_id.lower() not in loan.member_id.lower():
+            return False
+        if filters.member_name and filters.member_name.lower() not in self._member_name_for(loan).lower():
+            return False
+        if filters.title and filters.title.lower() not in self._title_for(loan).lower():
+            return False
+        if filters.checkout_date and filters.checkout_date.lower() not in loan.checkout_date.isoformat():
+            return False
+        if filters.due_date and filters.due_date.lower() not in loan.due_date.isoformat():
+            return False
+        if filters.return_date:
+            if loan.return_date is None or filters.return_date.lower() not in loan.return_date.isoformat():
+                return False
+        if filters.status:
+            status_text = "checked out" if loan.is_open else "returned"
+            if filters.status.strip().lower() not in status_text:
+                return False
+        return True
+
+    def _history_matches(self, filters: LoanHistoryFilters) -> list[Loan]:
+        matches = [loan for loan in self._loans.values() if self._matches_history_filters(loan, filters)]
+        return sorted(matches, key=lambda loan: (loan.checkout_date, loan.id), reverse=True)
+
+    def count_history(self, filters: LoanHistoryFilters) -> int:
+        return len(self._history_matches(filters))
+
+    def list_history_page(self, filters: LoanHistoryFilters, *, page: int, page_size: int) -> list[Loan]:
+        start = (page - 1) * page_size
+        return self._history_matches(filters)[start : start + page_size]

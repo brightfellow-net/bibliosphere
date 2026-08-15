@@ -2,17 +2,22 @@ import pytest
 
 from bibliosphere.application.use_cases.add_bibliography import AddBibliography
 from bibliosphere.application.use_cases.add_item import AddItem
+from bibliosphere.application.use_cases.checkout_item import CheckoutItem
+from bibliosphere.application.use_cases.create_member import CreateMember
 from bibliosphere.application.use_cases.delete_bibliography import DeleteBibliography
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.remove_item import RemoveItem
+from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
+from bibliosphere.domain.entities import Role
 from bibliosphere.domain.exceptions import (
     BibliographyHasItems,
     BibliographyNotFound,
     DuplicateCallNumber,
     DuplicateIsbn,
     InvalidBibliographyDetails,
+    ItemHasLoanHistory,
     ItemNotAvailable,
     ItemNotFound,
 )
@@ -114,6 +119,37 @@ def test_add_and_remove_item(bibliography_repo, author_repo, unit_of_work, loan_
 def test_remove_missing_item_raises(bibliography_repo, loan_repo):
     with pytest.raises(ItemNotFound):
         RemoveItem(bibliography_repo, loan_repo).execute(999)
+
+
+def test_remove_checked_out_item_raises(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="A", authors=["X"], call_number="CN-4", isbn_issn="124"
+    )
+    item = AddItem(bibliography_repo).execute(bibliography.id)
+    member = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.PATRON)
+    CheckoutItem(bibliography_repo, member_repo, loan_repo).execute(bibliography.id, member.id)
+
+    with pytest.raises(ItemNotAvailable):
+        RemoveItem(bibliography_repo, loan_repo).execute(item.id)
+    assert bibliography_repo.get_item(item.id) is not None
+
+
+def test_remove_item_with_returned_loan_history_raises(
+    bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo
+):
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="A", authors=["X"], call_number="CN-5", isbn_issn="125"
+    )
+    item = AddItem(bibliography_repo).execute(bibliography.id)
+    member = CreateMember(member_repo).execute("M0002", "bob", "Bob", "pw", Role.PATRON)
+    loan = CheckoutItem(bibliography_repo, member_repo, loan_repo).execute(bibliography.id, member.id)
+    ReturnItem(loan_repo).execute(loan.id)
+
+    # Even though the loan is closed (not currently checked out), the item must not
+    # be removable — that would silently erase the fact this copy was ever loaned.
+    with pytest.raises(ItemHasLoanHistory):
+        RemoveItem(bibliography_repo, loan_repo).execute(item.id)
+    assert bibliography_repo.get_item(item.id) is not None
 
 
 def test_delete_bibliography(bibliography_repo, author_repo, unit_of_work):

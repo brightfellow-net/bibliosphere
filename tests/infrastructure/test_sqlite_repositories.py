@@ -3,8 +3,14 @@ from datetime import date, timedelta
 import pytest
 
 from bibliosphere.application.use_cases.add_bibliography import AddBibliography
+from bibliosphere.application.use_cases.checkout_item import CheckoutItem
+from bibliosphere.application.use_cases.create_member import CreateMember
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
+from bibliosphere.application.use_cases.remove_item import RemoveItem
+from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Loan, Member, Role
+from bibliosphere.domain.exceptions import ItemHasLoanHistory
+from bibliosphere.domain.ports import LoanHistoryFilters
 from bibliosphere.infrastructure.sqlite.author_repository import SqliteAuthorRepository
 from bibliosphere.infrastructure.sqlite.bibliography_repository import SqliteBibliographyRepository
 from bibliosphere.infrastructure.sqlite.connection import connect, init_schema
@@ -190,7 +196,7 @@ def test_loan_repository_open_loan_tracking(conn):
     assert loans.count_open_loans_for_member(member.id) == 0
 
 
-def test_loan_repository_list_all_includes_open_and_returned(conn):
+def test_loan_repository_history_includes_open_and_returned(conn):
     bibliographies = SqliteBibliographyRepository(conn)
     members = SqliteMemberRepository(conn)
     loans = SqliteLoanRepository(conn)
@@ -212,7 +218,136 @@ def test_loan_repository_list_all_includes_open_and_returned(conn):
     returned_loan.return_date = today
     loans.update(returned_loan)
 
-    all_loans = loans.list_all()
+    filters = LoanHistoryFilters()
+    assert loans.count_history(filters) == 2
+    all_loans = loans.list_history_page(filters, page=1, page_size=200)
 
     assert {loan.id for loan in all_loans} == {open_loan.id, returned_loan.id}
     assert {loan.id: loan.is_open for loan in all_loans} == {open_loan.id: True, returned_loan.id: False}
+
+
+def test_loan_repository_history_paginates_in_checkout_date_order(conn):
+    bibliographies = SqliteBibliographyRepository(conn)
+    members = SqliteMemberRepository(conn)
+    loans = SqliteLoanRepository(conn)
+
+    bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
+    member = members.add(
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+    )
+
+    today = date.today()
+    created_ids = []
+    for offset in range(5):
+        item = bibliographies.add_item(bibliography.id)
+        loan = loans.add(
+            Loan(
+                id=None,
+                item_id=item.id,
+                member_id=member.id,
+                checkout_date=today - timedelta(days=offset),
+                due_date=today + timedelta(days=14 - offset),
+            )
+        )
+        created_ids.append(loan.id)
+
+    filters = LoanHistoryFilters()
+    assert loans.count_history(filters) == 5
+
+    page1 = loans.list_history_page(filters, page=1, page_size=2)
+    page2 = loans.list_history_page(filters, page=2, page_size=2)
+    page3 = loans.list_history_page(filters, page=3, page_size=2)
+
+    # Most recent checkout_date first — created_ids[0] has today's date, the rest older.
+    assert [loan.id for loan in page1] == created_ids[0:2]
+    assert [loan.id for loan in page2] == created_ids[2:4]
+    assert [loan.id for loan in page3] == created_ids[4:5]
+
+
+def test_loan_repository_history_filters_by_member_name_and_title(conn):
+    bibliographies = SqliteBibliographyRepository(conn)
+    members = SqliteMemberRepository(conn)
+    loans = SqliteLoanRepository(conn)
+
+    dune = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
+    hobbit = bibliographies.add(Bibliography(id=None, title="The Hobbit", isbn_issn="456", call_number="823 TOL"))
+    dune_item = bibliographies.add_item(dune.id)
+    hobbit_item = bibliographies.add_item(hobbit.id)
+    alice = members.add(
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+    )
+    bob = members.add(
+        Member(id="M0002", username="bob", name="Bob", role=Role.PATRON, password_hash="h", password_salt="s")
+    )
+
+    today = date.today()
+    loans.add(Loan(id=None, item_id=dune_item.id, member_id=alice.id, checkout_date=today, due_date=today))
+    loans.add(Loan(id=None, item_id=hobbit_item.id, member_id=bob.id, checkout_date=today, due_date=today))
+
+    by_title = loans.list_history_page(LoanHistoryFilters(title="hobbit"), page=1, page_size=200)
+    assert [loan.item_id for loan in by_title] == [hobbit_item.id]
+
+    by_member = loans.list_history_page(LoanHistoryFilters(member_name="ali"), page=1, page_size=200)
+    assert [loan.member_id for loan in by_member] == [alice.id]
+
+    by_status_returned = loans.list_history_page(LoanHistoryFilters(status="returned"), page=1, page_size=200)
+    assert by_status_returned == []
+
+    by_status_open = loans.list_history_page(LoanHistoryFilters(status="checked"), page=1, page_size=200)
+    assert len(by_status_open) == 2
+
+
+def test_loan_repository_history_shows_unknown_for_deleted_item(conn):
+    bibliographies = SqliteBibliographyRepository(conn)
+    members = SqliteMemberRepository(conn)
+    loans = SqliteLoanRepository(conn)
+
+    bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
+    item = bibliographies.add_item(bibliography.id)
+    member = members.add(
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+    )
+    today = date.today()
+    loan = loans.add(Loan(id=None, item_id=item.id, member_id=member.id, checkout_date=today, due_date=today))
+    loan.return_date = today
+    loans.update(loan)
+
+    # RemoveItem itself refuses to produce this state (see ItemHasLoanHistory /
+    # test_remove_item_with_returned_loan_history_raises), but a legacy-data import
+    # could plausibly leave orphaned references, so simulate one directly.
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("DELETE FROM items WHERE id = ?", (item.id,))
+    conn.commit()
+
+    # A loan whose item was later removed must still appear in history (LEFT JOIN),
+    # matching ListLoanHistory's "Unknown" fallback rather than disappearing silently.
+    filters = LoanHistoryFilters()
+    assert loans.count_history(filters) == 1
+    result = loans.list_history_page(filters, page=1, page_size=200)
+    assert [loan_.id for loan_ in result] == [loan.id]
+
+    by_title = loans.list_history_page(LoanHistoryFilters(title="unknown"), page=1, page_size=200)
+    assert [loan_.id for loan_ in by_title] == [loan.id]
+
+
+def test_remove_item_with_returned_loan_raises_cleanly_not_integrity_error(conn):
+    """Regression test: loans.item_id is a NOT NULL, enforced FK (PRAGMA foreign_keys
+    = ON in connect()), so deleting an item with any loan history — even returned —
+    used to bubble up as an unhandled sqlite3.IntegrityError. RemoveItem must catch
+    this itself and raise ItemHasLoanHistory before ever reaching the DELETE.
+    """
+    bibliographies = SqliteBibliographyRepository(conn)
+    members = SqliteMemberRepository(conn)
+    loans = SqliteLoanRepository(conn)
+
+    bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
+    item = bibliographies.add_item(bibliography.id)
+    member = members.add(
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+    )
+    loan = CheckoutItem(bibliographies, members, loans).execute(bibliography.id, member.id)
+    ReturnItem(loans).execute(loan.id)
+
+    with pytest.raises(ItemHasLoanHistory):
+        RemoveItem(bibliographies, loans).execute(item.id)
+    assert bibliographies.get_item(item.id) is not None

@@ -30,5 +30,5 @@ def member_repo():
 
 
 @pytest.fixture
-def loan_repo():
-    return FakeLoanRepository()
+def loan_repo(bibliography_repo, member_repo):
+    return FakeLoanRepository(bibliography_repo, member_repo)

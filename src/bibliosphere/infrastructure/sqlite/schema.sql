@@ -80,6 +80,9 @@ CREATE INDEX IF NOT EXISTS idx_bibliography_authors_author_id ON bibliography_au
 CREATE INDEX IF NOT EXISTS idx_items_bibliography_id ON items (bibliography_id);
 CREATE INDEX IF NOT EXISTS idx_loans_item_id ON loans (item_id);
 CREATE INDEX IF NOT EXISTS idx_loans_member_id ON loans (member_id);
+-- Matches the ORDER BY in SqliteLoanRepository.list_history_page, so paginating the
+-- loan history view stays an index walk instead of a full sort at any data volume.
+CREATE INDEX IF NOT EXISTS idx_loans_checkout_date ON loans (checkout_date DESC, id DESC);
 
 -- An item can have at most one open (unreturned) loan at a time.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_loans_one_open_per_item

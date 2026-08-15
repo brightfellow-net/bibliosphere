@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from math import ceil
 
 from bibliosphere.domain.entities import Bibliography, BibliographyAuthor, Item, Loan
 
@@ -37,3 +38,17 @@ class LoanView:
     loan: Loan
     bibliography_title: str
     member_name: str
+
+
+@dataclass
+class LoanHistoryPage:
+    """One page of loan history results, for presentation use."""
+
+    views: list[LoanView]
+    total_count: int
+    page: int
+    page_size: int
+
+    @property
+    def total_pages(self) -> int:
+        return max(1, ceil(self.total_count / self.page_size))

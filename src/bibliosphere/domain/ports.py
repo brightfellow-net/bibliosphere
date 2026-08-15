@@ -9,6 +9,7 @@ standalone master data, so their own CRUD lives on AuthorRepository instead
 (mirroring MemberRepository).
 """
 
+from dataclasses import dataclass
 from typing import Protocol
 
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
@@ -51,16 +52,41 @@ class MemberRepository(Protocol):
     def list_all(self) -> list[Member]: ...
 
 
+@dataclass
+class LoanHistoryFilters:
+    """Per-column substring filters for LoanRepository.count_history/list_history_page.
+
+    An empty string means "no filter on this column" — mirrors LoanHistoryView's
+    per-column filter boxes. `status` matches against the literal words "checked out"
+    / "returned" (e.g. "out" matches only checked-out loans).
+    """
+
+    member_id: str = ""
+    member_name: str = ""
+    title: str = ""
+    checkout_date: str = ""
+    due_date: str = ""
+    return_date: str = ""
+    status: str = ""
+
+
 class LoanRepository(Protocol):
     def add(self, loan: Loan) -> Loan: ...
     def update(self, loan: Loan) -> None: ...
     def get_by_id(self, loan_id: int) -> Loan | None: ...
     def get_open_loan_for_item(self, item_id: int) -> Loan | None: ...
+    # True if the item has ever been loaned, open or returned — an item's loan rows
+    # outlive the item itself (see ItemHasLoanHistory), so this must be checked
+    # before removing an item, not just whether it's currently checked out.
+    def has_any_loan_for_item(self, item_id: int) -> bool: ...
     def list_open_loans_for_member(self, member_id: str) -> list[Loan]: ...
     def list_all_open_loans(self) -> list[Loan]: ...
-    # Every loan, open or returned — for the librarian-facing loan history view.
-    def list_all(self) -> list[Loan]: ...
     def count_open_loans_for_member(self, member_id: str) -> int: ...
+
+    # Loan history is unbounded over the library's lifetime (see docs/requirements.md
+    # §6.1), so it's paginated and filtered at the repository rather than loaded whole.
+    def count_history(self, filters: LoanHistoryFilters) -> int: ...
+    def list_history_page(self, filters: LoanHistoryFilters, *, page: int, page_size: int) -> list[Loan]: ...
 
 
 class UnitOfWork(Protocol):

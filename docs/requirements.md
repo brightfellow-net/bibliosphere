@@ -110,6 +110,15 @@ Loan         (id, item_id -> Item, member_id -> Member,
 - **Architecture:** Clean Architecture (mandatory) — see `docs/architecture.md` for the
   full layering, dependency rule, and folder layout implementation must follow
 
+## 6.1 Non-Functional: Scale
+
+Bibliosphere replaces a predecessor app that became unusable as its data volume grew.
+Views over tables that accumulate without bound over the library's lifetime (loan
+history first; catalog and membership lists eventually) must stay responsive at
+**1,000,000+ rows**: paginate and filter at the database layer rather than loading a
+full table into memory or into a GUI widget, and avoid N+1 query patterns (resolve
+related records with joins or batched lookups, not one query per row).
+
 ## 7. Out of Scope / Future Considerations
 
 Deferred, not rejected — candidates for later versions:
