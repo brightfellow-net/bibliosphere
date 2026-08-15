@@ -85,12 +85,13 @@ class CatalogView(QWidget):
         # Otherwise its width is one more thing the filter row above would have to
         # account for, on top of each column's own width.
         self._table.verticalHeader().setVisible(False)
-        # Interactive (not Stretch) so users can drag column borders to resize; initial
-        # widths are set explicitly below since Interactive columns don't auto-size.
-        # Every column (Call Number/Title included) keeps this mode: with nothing
-        # forcing columns to shrink to the viewport width, Qt's default
-        # ScrollBarAsNeeded policy shows a horizontal scrollbar once the real column
-        # widths exceed it, instead of squeezing everything to fit.
+        # Interactive (not Qt's own Stretch mode) so users can still drag column
+        # borders to resize; initial widths are set explicitly below since Interactive
+        # columns don't auto-size. Every column (Call Number/Title included) keeps
+        # this mode — _stretch_columns() below grows columns by hand to fill a wide
+        # window, but never shrinks them, so Qt's default ScrollBarAsNeeded policy
+        # still shows a horizontal scrollbar on a window too narrow to fit them all,
+        # instead of squeezing everything to fit.
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         if self._show_actions:
             # Fixed to fit its buttons, unlike the data columns — leaving it Interactive
@@ -105,6 +106,15 @@ class CatalogView(QWidget):
         # to keep the non-frozen filter boxes lined up with their columns.
         self._table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self._table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        # The width a column would have from its default/last drag, before any stretch
+        # applied by _stretch_columns() below grows it to help fill extra window width.
+        # Excludes the Action column, which isn't stretched (see _stretch_columns).
+        self._column_base_widths = list(_DEFAULT_COLUMN_WIDTHS)
+        # Guards _on_column_resized/_on_frozen_column_resized while _stretch_columns()
+        # is itself the one calling setColumnWidth, so a stretch-driven resize isn't
+        # mistaken for a user drag (which would overwrite _column_base_widths with the
+        # stretched size, and re-trigger another stretch pass).
+        self._stretching = False
         for column, width in enumerate(_DEFAULT_COLUMN_WIDTHS):
             self._table.setColumnWidth(column, width)
 
@@ -205,17 +215,15 @@ class CatalogView(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        self._update_frozen_table_geometry()
-        self._update_filter_bar_geometry()
+        self._stretch_columns()
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        # The very first geometry pass (during __init__, via refresh()) runs before
+        # The very first stretch pass (during __init__, via refresh()) runs before
         # this widget has real on-screen geometry, and before the Action column's
         # ResizeToContents width has settled to fit its buttons — both only become
         # final once the widget is actually shown, so it needs to happen once more here.
-        self._update_frozen_table_geometry()
-        self._update_filter_bar_geometry()
+        self._stretch_columns()
 
     def minimumSizeHint(self) -> QSize:
         # Otherwise this propagates all the way up to the top-level window's minimum
@@ -225,6 +233,37 @@ class CatalogView(QWidget):
         # QAbstractScrollArea like the table already overrides this the same way, which
         # is why only the filter row needed it here.
         return QSize(200, 150)
+
+    def _set_column_width(self, index: int, width: int) -> None:
+        self._table.setColumnWidth(index, width)
+        if index < _FROZEN_COLUMN_COUNT:
+            self._frozen_table.setColumnWidth(index, width)
+
+    def _stretch_columns(self) -> None:
+        # Grows the data columns (never the Action column, which is sized to fit its
+        # buttons) beyond their base/dragged widths to absorb any extra window width,
+        # so there's no dead space past the last column on a wide window — but never
+        # shrinks them below that base width, so a narrow window still falls back to
+        # the real widths plus the horizontal scrollbar/frozen columns.
+        action_width = self._table.columnWidth(len(_COLUMN_LABELS)) if self._show_actions else 0
+        base_sum = sum(self._column_base_widths)
+        available = max(0, self._table.viewport().width() - action_width)
+        leftover = max(0, available - base_sum)
+        self._stretching = True
+        try:
+            distributed = 0
+            last = len(self._column_base_widths) - 1
+            for index, base in enumerate(self._column_base_widths):
+                if index == last:
+                    extra = leftover - distributed
+                else:
+                    extra = (leftover * base) // base_sum if base_sum else 0
+                    distributed += extra
+                self._set_column_width(index, base + extra)
+        finally:
+            self._stretching = False
+        self._update_frozen_table_geometry()
+        self._update_filter_bar_geometry()
 
     def _update_frozen_table_geometry(self) -> None:
         frozen_width = sum(self._table.columnWidth(i) for i in range(_FROZEN_COLUMN_COUNT))
@@ -264,10 +303,16 @@ class CatalogView(QWidget):
         header.setSortIndicator(column, order)
 
     def _on_frozen_column_resized(self, index: int, old_size: int, new_size: int) -> None:
-        self._table.setColumnWidth(index, new_size)
         self._sync_filter_column_width(index, new_size)
-        self._update_frozen_table_geometry()
-        self._update_filter_bar_geometry()
+        if self._stretching:
+            return
+        # A genuine user drag on the (visible) frozen header — mirror it onto
+        # _table's hidden-underneath column, record it as the new base width, and
+        # let _stretch_columns() redistribute from there (it also re-settles both
+        # overlays' geometry, so nothing else needs to here).
+        self._table.setColumnWidth(index, new_size)
+        self._column_base_widths[index] = new_size
+        self._stretch_columns()
 
     def _on_table_sorted(self) -> None:
         self._sync_frozen_rows()
@@ -282,6 +327,10 @@ class CatalogView(QWidget):
 
     def _on_column_resized(self, index: int, old_size: int, new_size: int) -> None:
         self._sync_filter_column_width(index, new_size)
+        if self._stretching or index >= len(_COLUMN_LABELS):
+            return
+        self._column_base_widths[index] = new_size
+        self._stretch_columns()
 
     def _sync_filter_column_width(self, index: int, new_size: int) -> None:
         if 0 <= index < len(self._column_filters):
@@ -310,10 +359,9 @@ class CatalogView(QWidget):
         # than relied on via that signal, which only covers a later interactive click.
         self._sync_frozen_rows()
         # Action's ResizeToContents width can only be known once its cell widgets
-        # exist, i.e. after the rows above are populated — so the overlays need to
-        # re-settle afterward too, not just when a column is dragged.
-        self._update_frozen_table_geometry()
-        self._update_filter_bar_geometry()
+        # exist, i.e. after the rows above are populated — so the stretch/overlays
+        # need to re-settle afterward too, not just when a column is dragged.
+        self._stretch_columns()
 
     @staticmethod
     def _matches_filters(entry: CatalogEntry, filters: list[str]) -> bool:
