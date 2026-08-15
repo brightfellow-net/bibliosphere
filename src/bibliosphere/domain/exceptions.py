@@ -35,6 +35,20 @@ class ItemHasLoanHistory(BibliosphereError):
     """
 
 
+class MemberHasLoanHistory(BibliosphereError):
+    """Raised when deleting a member who has ever had a loan (open or returned).
+
+    loans.member_id is a NOT NULL FK — this surfaces that as a clean, catchable
+    error instead of an unhandled IntegrityError, mirroring ItemHasLoanHistory.
+    """
+
+
+class CannotDeleteLastLibrarian(BibliosphereError):
+    """Raised when deleting the last remaining librarian account would leave the
+    app with no one able to log in and manage it.
+    """
+
+
 class DuplicateUsername(BibliosphereError):
     """Raised when creating a member whose username is already taken."""
 

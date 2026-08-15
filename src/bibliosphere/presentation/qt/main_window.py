@@ -60,7 +60,14 @@ class MainWindow(QMainWindow):
             tabs.addTab(catalog, "Catalog")
             views.append(catalog)
 
-            members = MemberView(uc.list_members, uc.create_member, uc.edit_member, uc.generate_member_id)
+            members = MemberView(
+                uc.list_members,
+                uc.create_member,
+                uc.edit_member,
+                uc.generate_member_id,
+                uc.delete_member,
+                current_member_id=member.id,
+            )
             tabs.addTab(members, "Members")
             views.append(members)
 

@@ -121,6 +121,10 @@ class SqliteLoanRepository:
         row = self._conn.execute("SELECT 1 FROM loans WHERE item_id = ? LIMIT 1", (item_id,)).fetchone()
         return row is not None
 
+    def has_any_loan_for_member(self, member_id: str) -> bool:
+        row = self._conn.execute("SELECT 1 FROM loans WHERE member_id = ? LIMIT 1", (member_id,)).fetchone()
+        return row is not None
+
     def list_open_loans_for_member(self, member_id: str) -> list[Loan]:
         rows = self._conn.execute(
             "SELECT * FROM loans WHERE member_id = ? AND return_date IS NULL ORDER BY due_date", (member_id,)

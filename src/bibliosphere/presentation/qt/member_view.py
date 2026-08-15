@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from bibliosphere.application.use_cases.create_member import CreateMember
+from bibliosphere.application.use_cases.delete_member import DeleteMember
 from bibliosphere.application.use_cases.edit_member import EditMember
 from bibliosphere.application.use_cases.generate_member_id import GenerateMemberId
 from bibliosphere.application.use_cases.list_members import ListMembers
@@ -31,11 +32,17 @@ _COLUMN_LABELS = [
     "Join Date",
     "Expiry Date",
     "Address",
+    "Action",
 ]
 
 
 class MemberView(QWidget):
-    """Librarian-only: create and edit patron/librarian accounts."""
+    """Librarian-only: create, edit, and delete patron/librarian accounts.
+
+    Edit/Delete are per-row buttons in the trailing "Action" column (mirroring
+    CatalogView) rather than a global "...Selected" button, so they don't depend on
+    a table selection.
+    """
 
     def __init__(
         self,
@@ -43,6 +50,8 @@ class MemberView(QWidget):
         create_member: CreateMember,
         edit_member: EditMember,
         generate_member_id: GenerateMemberId,
+        delete_member: DeleteMember,
+        current_member_id: str,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -50,36 +59,42 @@ class MemberView(QWidget):
         self._create_member = create_member
         self._edit_member = edit_member
         self._generate_member_id = generate_member_id
+        self._delete_member = delete_member
+        self._current_member_id = current_member_id
         self._members: list[Member] = []
-        # The subset of self._members actually shown after filtering — _selected_member
-        # indexes into this, not self._members, since a filtered table's row order
-        # diverges from the unfiltered list.
+        # The subset of self._members actually shown after filtering — action buttons
+        # close over a member id rather than a row index, so filtering/refreshing never
+        # invalidates a button's target the way a row-index-based lookup could.
         self._displayed_members: list[Member] = []
 
         self._column_filters: list[QLineEdit] = []
         filter_row = QHBoxLayout()
         for label in _COLUMN_LABELS:
             filter_box = QLineEdit()
-            filter_box.setPlaceholderText(f"Filter {label}...")
-            filter_box.textChanged.connect(self._apply_filters)
+            if label == "Action":
+                filter_box.setEnabled(False)
+            else:
+                filter_box.setPlaceholderText(f"Filter {label}...")
+                filter_box.textChanged.connect(self._apply_filters)
             self._column_filters.append(filter_box)
             filter_row.addWidget(filter_box)
 
         self._table = QTableWidget(0, len(_COLUMN_LABELS))
         self._table.setHorizontalHeaderLabels(_COLUMN_LABELS)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # Fixed to fit its buttons, unlike the data columns — leaving it Stretch would
+        # squeeze/distort the Edit/Delete buttons as the window is resized.
+        self._table.horizontalHeader().setSectionResizeMode(
+            len(_COLUMN_LABELS) - 1, QHeaderView.ResizeMode.ResizeToContents
+        )
 
         add_button = QPushButton("Add Member...")
         add_button.clicked.connect(self._on_add_member)
-        edit_button = QPushButton("Edit Selected...")
-        edit_button.clicked.connect(self._on_edit_member)
 
         button_row = QHBoxLayout()
         button_row.addWidget(add_button)
-        button_row.addWidget(edit_button)
 
         layout = QVBoxLayout(self)
         layout.addLayout(filter_row)
@@ -97,8 +112,7 @@ class MemberView(QWidget):
         self._displayed_members = [m for m in self._members if self._matches_filters(m, filters)]
         self._table.setRowCount(len(self._displayed_members))
         for row, member in enumerate(self._displayed_members):
-            for column, value in enumerate(self._row_values(member)):
-                self._table.setItem(row, column, QTableWidgetItem(value))
+            self._set_row(row, member)
 
     @staticmethod
     def _matches_filters(member: Member, filters: list[str]) -> bool:
@@ -120,11 +134,28 @@ class MemberView(QWidget):
             member.address or "",
         ]
 
-    def _selected_member(self) -> Member | None:
-        row = self._table.currentRow()
-        if row < 0 or row >= len(self._displayed_members):
-            return None
-        return self._displayed_members[row]
+    def _set_row(self, row: int, member: Member) -> None:
+        for column, value in enumerate(self._row_values(member)):
+            self._table.setItem(row, column, QTableWidgetItem(value))
+        self._table.setCellWidget(row, len(_COLUMN_LABELS) - 1, self._make_action_widget(member.id))
+
+    def _make_action_widget(self, member_id: str) -> QWidget:
+        widget = QWidget()
+        row = QHBoxLayout(widget)
+        row.setContentsMargins(2, 2, 2, 2)
+        edit_button = QPushButton("Edit")
+        edit_button.clicked.connect(lambda: self._on_edit_member(member_id))
+        row.addWidget(edit_button)
+        delete_button = QPushButton("Delete")
+        delete_button.clicked.connect(lambda: self._on_delete_member(member_id))
+        row.addWidget(delete_button)
+        return widget
+
+    def _member_by_id(self, member_id: str) -> Member | None:
+        # A row's action buttons close over the member id rather than its Member
+        # snapshot, so a click always acts on the latest data even if refresh()
+        # replaced self._displayed_members since the button was created.
+        return next((m for m in self._displayed_members if m.id == member_id), None)
 
     def _on_add_member(self) -> None:
         suggested_id = self._generate_member_id.execute()
@@ -133,10 +164,9 @@ class MemberView(QWidget):
             return
         self.refresh()
 
-    def _on_edit_member(self) -> None:
-        member = self._selected_member()
+    def _on_edit_member(self, member_id: str) -> None:
+        member = self._member_by_id(member_id)
         if member is None:
-            QMessageBox.information(self, "No selection", "Select a member first.")
             return
         dialog = EditMemberDialog(member, self)
         if not dialog.exec():
@@ -151,5 +181,26 @@ class MemberView(QWidget):
             return
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not edit member", str(error))
+            return
+        self.refresh()
+
+    def _on_delete_member(self, member_id: str) -> None:
+        if member_id == self._current_member_id:
+            QMessageBox.warning(self, "Cannot delete member", "You cannot delete your own account while logged in.")
+            return
+        member = self._member_by_id(member_id)
+        if member is None:
+            return
+        confirmed = QMessageBox.question(
+            self,
+            "Delete member",
+            f"Delete {member.name!r}? This cannot be undone.",
+        )
+        if confirmed != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._delete_member.execute(member_id)
+        except BibliosphereError as error:
+            QMessageBox.warning(self, "Could not delete member", str(error))
             return
         self.refresh()

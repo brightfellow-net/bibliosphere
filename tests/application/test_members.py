@@ -2,16 +2,22 @@ from datetime import date, timedelta
 
 import pytest
 
+from bibliosphere.application.use_cases.add_bibliography import AddBibliography
 from bibliosphere.application.use_cases.authenticate_user import AuthenticateUser
+from bibliosphere.application.use_cases.checkout_item import CheckoutItem
 from bibliosphere.application.use_cases.create_member import CreateMember
+from bibliosphere.application.use_cases.delete_member import DeleteMember
 from bibliosphere.application.use_cases.edit_member import EditMember
 from bibliosphere.application.use_cases.generate_member_id import GenerateMemberId
+from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.domain.entities import Role
 from bibliosphere.domain.exceptions import (
+    CannotDeleteLastLibrarian,
     DuplicateMemberId,
     DuplicateUsername,
     InvalidCredentials,
     InvalidMemberDetails,
+    MemberHasLoanHistory,
     MemberNotFound,
 )
 
@@ -228,3 +234,47 @@ def test_generate_member_id_resets_to_one_on_a_new_day(member_repo):
     # not continue from yesterday's count.
     suggested = GenerateMemberId(member_repo).execute()
     assert suggested == f"{today_prefix}001"
+
+
+def test_delete_member(member_repo, loan_repo):
+    member = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.PATRON)
+    DeleteMember(member_repo, loan_repo).execute(member.id)
+    assert member_repo.get_by_id(member.id) is None
+
+
+def test_delete_member_missing_raises(member_repo, loan_repo):
+    with pytest.raises(MemberNotFound):
+        DeleteMember(member_repo, loan_repo).execute("nonexistent")
+
+
+def test_delete_member_with_loan_history_raises(
+    member_repo, loan_repo, bibliography_repo, author_repo, unit_of_work
+):
+    member = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.PATRON)
+    bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="Dune", authors=["Herbert"], call_number="CN-1"
+    )
+    bibliography_repo.add_item(bibliography.id)
+    loan = CheckoutItem(bibliography_repo, member_repo, loan_repo).execute(bibliography.id, member.id)
+    ReturnItem(loan_repo).execute(loan.id)
+
+    # Even though the loan is closed (returned), it must still block deletion —
+    # loans.member_id is a NOT NULL FK, mirroring ItemHasLoanHistory for items.
+    with pytest.raises(MemberHasLoanHistory):
+        DeleteMember(member_repo, loan_repo).execute(member.id)
+    assert member_repo.get_by_id(member.id) is not None
+
+
+def test_delete_last_librarian_raises(member_repo, loan_repo):
+    librarian = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.LIBRARIAN)
+    with pytest.raises(CannotDeleteLastLibrarian):
+        DeleteMember(member_repo, loan_repo).execute(librarian.id)
+    assert member_repo.get_by_id(librarian.id) is not None
+
+
+def test_delete_one_of_two_librarians_succeeds(member_repo, loan_repo):
+    librarian1 = CreateMember(member_repo).execute("M0001", "alice", "Alice", "pw", Role.LIBRARIAN)
+    CreateMember(member_repo).execute("M0002", "bob", "Bob", "pw", Role.LIBRARIAN)
+
+    DeleteMember(member_repo, loan_repo).execute(librarian1.id)
+    assert member_repo.get_by_id(librarian1.id) is None

@@ -181,6 +181,9 @@ class FakeMemberRepository:
     def update(self, member: Member) -> None:
         self._members[member.id] = member
 
+    def remove(self, member_id: str) -> None:
+        self._members.pop(member_id, None)
+
     def get_by_id(self, member_id: str) -> Member | None:
         return self._members.get(member_id)
 
@@ -230,6 +233,9 @@ class FakeLoanRepository:
 
     def has_any_loan_for_item(self, item_id: int) -> bool:
         return any(loan.item_id == item_id for loan in self._loans.values())
+
+    def has_any_loan_for_member(self, member_id: str) -> bool:
+        return any(loan.member_id == member_id for loan in self._loans.values())
 
     def list_open_loans_for_member(self, member_id: str) -> list[Loan]:
         return [loan for loan in self._loans.values() if loan.member_id == member_id and loan.is_open]

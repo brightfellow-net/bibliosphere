@@ -60,6 +60,10 @@ class SqliteMemberRepository:
         )
         self._conn.commit()
 
+    def remove(self, member_id: str) -> None:
+        self._conn.execute("DELETE FROM members WHERE id = ?", (member_id,))
+        self._conn.commit()
+
     def get_by_id(self, member_id: str) -> Member | None:
         row = self._conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
         return self._row_to_member(row) if row else None
