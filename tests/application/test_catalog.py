@@ -21,6 +21,7 @@ from bibliosphere.domain.exceptions import (
     ItemNotAvailable,
     ItemNotFound,
 )
+from bibliosphere.domain.ports import CatalogFilters
 
 
 def test_add_bibliography(bibliography_repo, author_repo, unit_of_work):
@@ -175,6 +176,12 @@ def test_delete_bibliography_rejects_when_items_exist(bibliography_repo, author_
     assert bibliography_repo.get_by_id(bibliography.id) is not None
 
 
+def _search(bibliography_repo, loan_repo, filters=CatalogFilters(), *, sort_column="title", sort_descending=False, page=1, page_size=200):
+    return SearchCatalog(bibliography_repo, loan_repo).execute(
+        filters, sort_column=sort_column, sort_descending=sort_descending, page=page, page_size=page_size
+    )
+
+
 def test_search_catalog_reports_availability(bibliography_repo, author_repo, unit_of_work, loan_repo):
     bibliography = AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         title="Dune", authors=["Herbert"], call_number="CN-4", isbn_issn="123"
@@ -182,16 +189,58 @@ def test_search_catalog_reports_availability(bibliography_repo, author_repo, uni
     AddItem(bibliography_repo).execute(bibliography.id)
     AddItem(bibliography_repo).execute(bibliography.id)
 
-    [entry] = SearchCatalog(bibliography_repo, loan_repo).execute("Dune")
+    result = _search(bibliography_repo, loan_repo, CatalogFilters(title="Dune"))
+    [entry] = result.entries
     assert entry.total_items == 2
     assert entry.available_items == 2
 
 
-def test_search_catalog_empty_query_lists_all(bibliography_repo, author_repo, unit_of_work, loan_repo):
+def test_search_catalog_no_filters_lists_all_on_first_page(bibliography_repo, author_repo, unit_of_work, loan_repo):
     AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         title="A", authors=["X"], call_number="CN-5", isbn_issn="1"
     )
     AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         title="B", authors=["Y"], call_number="CN-6", isbn_issn="2"
     )
-    assert len(SearchCatalog(bibliography_repo, loan_repo).execute("")) == 2
+    result = _search(bibliography_repo, loan_repo)
+    assert len(result.entries) == 2
+    assert result.total_count == 2
+
+
+def test_search_catalog_paginates(bibliography_repo, author_repo, unit_of_work, loan_repo):
+    for title, call_number in [("A", "CN-1"), ("B", "CN-2"), ("C", "CN-3")]:
+        AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+            title=title, authors=[], call_number=call_number
+        )
+
+    page1 = _search(bibliography_repo, loan_repo, page=1, page_size=2)
+    page2 = _search(bibliography_repo, loan_repo, page=2, page_size=2)
+    assert [e.bibliography.title for e in page1.entries] == ["A", "B"]
+    assert page1.total_count == 3
+    assert page1.total_pages == 2
+    assert [e.bibliography.title for e in page2.entries] == ["C"]
+
+
+def test_search_catalog_sorts_by_call_number_descending(bibliography_repo, author_repo, unit_of_work, loan_repo):
+    for title, call_number in [("A", "CN-1"), ("B", "CN-2")]:
+        AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+            title=title, authors=[], call_number=call_number
+        )
+
+    result = _search(bibliography_repo, loan_repo, sort_column="call_number", sort_descending=True)
+    assert [e.bibliography.call_number for e in result.entries] == ["CN-2", "CN-1"]
+
+
+def test_search_catalog_filters_by_author_prefix(bibliography_repo, author_repo, unit_of_work, loan_repo):
+    AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="Dune", authors=["Herbert"], call_number="CN-7"
+    )
+    AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
+        title="Other", authors=["Someone Else"], call_number="CN-8"
+    )
+
+    result = _search(bibliography_repo, loan_repo, CatalogFilters(author="Herb"))
+    assert [e.bibliography.title for e in result.entries] == ["Dune"]
+
+    # Prefix, not substring — "erbert" doesn't start any author's name.
+    assert _search(bibliography_repo, loan_repo, CatalogFilters(author="erbert")).entries == []

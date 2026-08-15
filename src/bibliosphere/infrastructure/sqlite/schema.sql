@@ -76,6 +76,12 @@ CREATE TABLE IF NOT EXISTS loans (
     return_date TEXT
 );
 
+-- Back CatalogFilters/list_page's prefix (LIKE 'text%') filtering and sorting, so the
+-- catalog stays fast as bibliographies grows into the thousands.
+CREATE INDEX IF NOT EXISTS idx_bibliographies_title ON bibliographies (title);
+CREATE INDEX IF NOT EXISTS idx_bibliographies_call_number ON bibliographies (call_number);
+CREATE INDEX IF NOT EXISTS idx_bibliographies_isbn_issn ON bibliographies (isbn_issn);
+
 CREATE INDEX IF NOT EXISTS idx_bibliography_authors_author_id ON bibliography_authors (author_id);
 CREATE INDEX IF NOT EXISTS idx_items_bibliography_id ON items (bibliography_id);
 CREATE INDEX IF NOT EXISTS idx_loans_item_id ON loans (item_id);

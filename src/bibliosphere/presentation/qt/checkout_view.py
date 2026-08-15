@@ -24,6 +24,12 @@ from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.domain.entities import Member
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.domain.ids import require_id
+from bibliosphere.domain.ports import CatalogFilters
+
+# The catalog is unbounded and paginated at the repository (see SearchCatalog), but the
+# call-number autocomplete below needs every bibliography, not one page — so this asks
+# for a page large enough to always cover the whole catalog in one request.
+_MAX_CATALOG_ENTRIES = 100_000
 
 
 class CheckoutView(QWidget):
@@ -128,7 +134,10 @@ class CheckoutView(QWidget):
         # to need special handling), but a QLineEdit's typed/selected text is simply
         # untouched by refresh() and persists on its own.
         self._entry_by_display_text = {}
-        for entry in self._search_catalog.execute(""):
+        catalog_page = self._search_catalog.execute(
+            CatalogFilters(), sort_column="call_number", sort_descending=False, page=1, page_size=_MAX_CATALOG_ENTRIES
+        )
+        for entry in catalog_page.entries:
             display = f"{entry.bibliography.call_number} — {entry.bibliography.title}"
             self._entry_by_display_text[display] = entry
         self._bibliography_completer_model.setStringList(sorted(self._entry_by_display_text))

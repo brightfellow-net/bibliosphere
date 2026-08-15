@@ -10,7 +10,7 @@ from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Loan, Member, Role
 from bibliosphere.domain.exceptions import ItemHasLoanHistory
-from bibliosphere.domain.ports import LoanHistoryFilters
+from bibliosphere.domain.ports import CatalogFilters, LoanHistoryFilters
 from bibliosphere.infrastructure.sqlite.author_repository import SqliteAuthorRepository
 from bibliosphere.infrastructure.sqlite.bibliography_repository import SqliteBibliographyRepository
 from bibliosphere.infrastructure.sqlite.connection import connect, init_schema
@@ -24,6 +24,20 @@ class _FailingAuthorRepository:
 
     def find_or_create_by_name(self, name: str) -> Author:
         raise RuntimeError("simulated author-lookup failure")
+
+
+def _page(
+    repo: SqliteBibliographyRepository,
+    filters: CatalogFilters,
+    *,
+    sort_column: str = "title",
+    sort_descending: bool = False,
+    page: int = 1,
+    page_size: int = 200,
+) -> list[Bibliography]:
+    return repo.list_page(
+        filters, sort_column=sort_column, sort_descending=sort_descending, page=page, page_size=page_size
+    )
 
 
 @pytest.fixture
@@ -42,7 +56,8 @@ def test_bibliography_repository_round_trip(conn):
     assert repo.get_by_id(added.id) == added
     assert repo.get_by_isbn("123") == added
     assert repo.get_by_call_number("813.54 HER") == added
-    assert repo.search("Dune") == [added]
+    assert repo.count(CatalogFilters(title="Dune")) == 1
+    assert _page(repo, CatalogFilters(title="Dune")) == [added]
 
     herbert = authors.add(Author(id=None, name="Herbert"))
     anderson = authors.add(Author(id=None, name="Anderson"))
@@ -51,7 +66,7 @@ def test_bibliography_repository_round_trip(conn):
         BibliographyAuthor(author=herbert, level=1),
         BibliographyAuthor(author=anderson, level=2),
     ]
-    assert repo.search("Herbert") == [added]
+    assert _page(repo, CatalogFilters(author="Herbert")) == [added]
 
     item = repo.add_item(added.id)
     assert repo.list_items(added.id) == [item]
@@ -72,16 +87,40 @@ def test_bibliography_repository_remove_clears_author_links(conn):
     assert repo.list_authors(added.id) == []
 
 
-def test_search_escapes_like_wildcards_in_query(conn):
+def test_catalog_paginates_and_sorts(conn):
+    repo = SqliteBibliographyRepository(conn)
+    repo.add(Bibliography(id=None, title="Charlie", call_number="CN-3"))
+    repo.add(Bibliography(id=None, title="Alpha", call_number="CN-1"))
+    repo.add(Bibliography(id=None, title="Bravo", call_number="CN-2"))
+
+    assert repo.count(CatalogFilters()) == 3
+    page1 = _page(repo, CatalogFilters(), sort_column="title", page=1, page_size=2)
+    page2 = _page(repo, CatalogFilters(), sort_column="title", page=2, page_size=2)
+    assert [b.title for b in page1] == ["Alpha", "Bravo"]
+    assert [b.title for b in page2] == ["Charlie"]
+
+    descending = _page(repo, CatalogFilters(), sort_column="call_number", sort_descending=True, page=1, page_size=200)
+    assert [b.call_number for b in descending] == ["CN-3", "CN-2", "CN-1"]
+
+
+def test_catalog_filter_escapes_like_wildcards_and_is_prefix_only(conn):
     repo = SqliteBibliographyRepository(conn)
     dune = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="CN-1"))
     wolf = repo.add(Bibliography(id=None, title="100% Wolf", isbn_issn="456", call_number="CN-2"))
 
     # A literal '_' shouldn't match every row via LIKE's single-character wildcard.
-    assert repo.search("_") == []
+    assert _page(repo, CatalogFilters(title="_")) == []
     # A literal '%' should still match its literal occurrence, not act as a wildcard.
-    assert repo.search("100%") == [wolf]
-    assert repo.search("Dune") == [dune]
+    assert _page(repo, CatalogFilters(title="100%")) == [wolf]
+    assert _page(repo, CatalogFilters(title="Dune")) == [dune]
+    # Prefix-only: a mid-string needle must not match, unlike the old substring search.
+    assert _page(repo, CatalogFilters(title="une")) == []
+
+
+def test_catalog_list_page_rejects_unsortable_column(conn):
+    repo = SqliteBibliographyRepository(conn)
+    with pytest.raises(ValueError):
+        _page(repo, CatalogFilters(), sort_column="author")
 
 
 def test_uow_rolls_back_all_writes_on_failure(conn):
@@ -93,7 +132,7 @@ def test_uow_rolls_back_all_writes_on_failure(conn):
             repo.add(Bibliography(id=None, title="Ghost", call_number="CN-GHOST"))
             raise RuntimeError("simulated failure mid-transaction")
 
-    assert repo.list_all() == []
+    assert repo.count(CatalogFilters()) == 0
 
 
 def test_add_bibliography_rolls_back_on_author_failure(conn):
@@ -105,7 +144,7 @@ def test_add_bibliography_rolls_back_on_author_failure(conn):
         use_case.execute(title="Ghost", authors=["Someone"], call_number="CN-GHOST")
 
     # The bibliography insert that happened before the failure must not have leaked.
-    assert bibliographies.list_all() == []
+    assert bibliographies.count(CatalogFilters()) == 0
 
 
 def test_edit_bibliography_rolls_back_partial_update_on_failure(conn):

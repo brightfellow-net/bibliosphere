@@ -1,9 +1,10 @@
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -13,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bibliosphere.application.dto import CatalogEntry
+from bibliosphere.application.dto import CatalogEntry, CatalogPage
 from bibliosphere.application.use_cases.add_bibliography import AddBibliography
 from bibliosphere.application.use_cases.add_item import AddItem
 from bibliosphere.application.use_cases.delete_bibliography import DeleteBibliography
@@ -24,6 +25,7 @@ from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.domain.exceptions import BibliosphereError
 from bibliosphere.domain.ids import require_id
+from bibliosphere.domain.ports import CatalogFilters
 from bibliosphere.presentation.qt.add_bibliography_dialog import AddBibliographyDialog
 from bibliosphere.presentation.qt.edit_bibliography_dialog import EditBibliographyDialog
 
@@ -34,6 +36,20 @@ _DEFAULT_COLUMN_WIDTHS = [110, 260, 140, 160, 110, 90, 90, 80]
 # horizontally underneath (see _frozen_table below) — this is how many leading
 # columns that covers.
 _FROZEN_COLUMN_COUNT = 2
+# Parallel to the first 7 entries of _COLUMN_LABELS (all but "Available", which has no
+# CatalogFilters field — see CatalogFilters' docstring for why).
+_FILTER_FIELD_NAMES = ["call_number", "title", "series_title", "author", "isbn_issn", "edition", "publish_year"]
+# Column index -> CatalogFilters/list_page sort_column, for the columns that map onto a
+# real, directly-sortable bibliography column. "Authors" (3, a join) and "Available" (7,
+# a derived available/total ratio) are intentionally absent — clicking those headers is
+# a no-op, consistent with them not being filterable either.
+_SORT_COLUMNS: dict[int, str] = {0: "call_number", 1: "title", 2: "series_title", 4: "isbn_issn", 5: "edition", 6: "publish_year"}
+# The catalog is unbounded (thousands of bibliographies), so only one page is ever
+# fetched/materialized at a time — see SearchCatalog / SqliteBibliographyRepository.
+_PAGE_SIZE = 200
+# A filter needs a fresh repository query, so debounce so typing doesn't fire one such
+# query per keystroke (mirrors LoanHistoryView).
+_FILTER_DEBOUNCE_MS = 300
 
 
 class CatalogView(QWidget):
@@ -69,6 +85,13 @@ class CatalogView(QWidget):
         self._remove_item = remove_item
         self._delete_bibliography = delete_bibliography
         self._entries: list[CatalogEntry] = []
+        self._page = 1
+        self._sort_column = "title"
+        self._sort_descending = False
+        self._filter_debounce = QTimer(self)
+        self._filter_debounce.setSingleShot(True)
+        self._filter_debounce.setInterval(_FILTER_DEBOUNCE_MS)
+        self._filter_debounce.timeout.connect(self._on_filters_changed)
         self._show_actions = (
             edit_bibliography is not None
             or add_item is not None
@@ -99,7 +122,15 @@ class CatalogView(QWidget):
             self._table.horizontalHeader().setSectionResizeMode(
                 len(column_labels) - 1, QHeaderView.ResizeMode.ResizeToContents
             )
-        self._table.setSortingEnabled(True)
+        # Sorting is server-side (see _on_header_clicked/_load_page): only one page of
+        # the full (unbounded) catalog is ever loaded, so Qt's own click-to-sort
+        # reordering the loaded rows in place would silently sort just that page —
+        # same reasoning LoanHistoryView disables it for. Sections must still be made
+        # explicitly clickable and the indicator explicitly shown, since both are
+        # normally switched on as a side effect of setSortingEnabled(True).
+        self._table.setSortingEnabled(False)
+        self._table.horizontalHeader().setSectionsClickable(True)
+        self._table.horizontalHeader().setSortIndicatorShown(True)
         # Default scroll mode is per-item (the horizontal scrollbar's value would be a
         # column index, not a pixel offset), which both makes for chunky horizontal
         # scrolling and breaks the pixel-for-pixel offset _on_table_hscroll relies on
@@ -140,10 +171,11 @@ class CatalogView(QWidget):
         for column in range(_FROZEN_COLUMN_COUNT):
             self._frozen_table.setColumnWidth(column, _DEFAULT_COLUMN_WIDTHS[column])
         # _frozen_table's header visually replaces _table's for these columns (it's
-        # drawn on top), so it needs its own click-to-sort — but it must never sort
-        # itself independently of _table (that would desync row order between the
-        # two), so a click here just forwards to _table's real sort indicator instead.
+        # drawn on top), so it needs its own click-to-sort — routed through the same
+        # _on_header_clicked as _table's real header (see wiring below) so a click on
+        # either always drives the one shared server-side sort.
         self._frozen_table.horizontalHeader().setSectionsClickable(True)
+        self._frozen_table.horizontalHeader().setSortIndicatorShown(True)
 
         self._column_filters: list[QLineEdit] = []
         # The filter row can't be a real table row pinned above the sortable ones, so
@@ -163,11 +195,14 @@ class CatalogView(QWidget):
         scroll_filter_layout.setContentsMargins(0, 0, 0, 0)
         for index, label in enumerate(column_labels):
             filter_box = QLineEdit()
-            if label == "Action":
+            if label in ("Action", "Available"):
+                # Action has nothing to filter; Available is a derived available/total
+                # ratio (see CatalogFilters' docstring), not a stored column, so it has
+                # no server-side filter to wire up — stays display-only.
                 filter_box.setEnabled(False)
             else:
                 filter_box.setPlaceholderText(f"Filter {label}...")
-                filter_box.textChanged.connect(self._apply_filters)
+                filter_box.textChanged.connect(lambda _text: self._filter_debounce.start())
             self._column_filters.append(filter_box)
             if index < _FROZEN_COLUMN_COUNT:
                 frozen_filter_layout.addWidget(filter_box)
@@ -181,28 +216,32 @@ class CatalogView(QWidget):
         # a handler firing off one of the setColumnWidth() calls above and crashing on
         # a not-yet-built attribute.
         self._table.horizontalHeader().sectionResized.connect(self._on_column_resized)
+        self._table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._table.horizontalScrollBar().valueChanged.connect(self._on_table_hscroll)
-        self._frozen_table.horizontalHeader().sectionClicked.connect(self._on_frozen_header_clicked)
+        self._frozen_table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         # Dragging Call Number/Title now has to happen on the (visible) frozen
         # header — mirror the new width onto _table's hidden-underneath column so its
         # total content width (and therefore its horizontal scrollbar range) stays
         # correct, and re-settle both overlays' geometry.
         self._frozen_table.horizontalHeader().sectionResized.connect(self._on_frozen_column_resized)
-        # A header click (native, for columns 2+, or forwarded from _frozen_table's
-        # header for 0/1 via _on_frozen_header_clicked above) reorders _table's rows
-        # in place without going through _apply_filters, so _frozen_table needs an
-        # explicit resync afterward. Note this has to be the *model's* layoutChanged,
-        # not the header's sortIndicatorChanged: the indicator signal fires before the
-        # actual row reorder happens (confirmed empirically — connecting there copied
-        # stale, pre-sort data into _frozen_table), whereas layoutChanged fires once
-        # the reorder is actually done.
-        self._table.model().layoutChanged.connect(self._on_table_sorted)
         self._table.verticalScrollBar().valueChanged.connect(self._frozen_table.verticalScrollBar().setValue)
         self._frozen_table.verticalScrollBar().valueChanged.connect(self._table.verticalScrollBar().setValue)
+
+        self._previous_button = QPushButton("< Previous")
+        self._previous_button.clicked.connect(self._on_previous)
+        self._page_label = QLabel()
+        self._next_button = QPushButton("Next >")
+        self._next_button.clicked.connect(self._on_next)
+        pagination_row = QHBoxLayout()
+        pagination_row.addWidget(self._previous_button)
+        pagination_row.addWidget(self._page_label)
+        pagination_row.addWidget(self._next_button)
+        pagination_row.addStretch()
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._filter_bar)
         layout.addWidget(self._table)
+        layout.addLayout(pagination_row)
 
         if add_bibliography is not None:
             bib_row = QHBoxLayout()
@@ -290,17 +329,24 @@ class CatalogView(QWidget):
         # widths) on both sides, so no offset math is needed beyond the raw value.
         self._scroll_filter_inner.move(-value, 0)
 
-    def _on_frozen_header_clicked(self, column: int) -> None:
-        header = self._table.horizontalHeader()
-        already_ascending = (
-            header.sortIndicatorSection() == column
-            and header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
-        )
-        order = Qt.SortOrder.DescendingOrder if already_ascending else Qt.SortOrder.AscendingOrder
-        # _table has setSortingEnabled(True), which is what makes changing its sort
-        # indicator (rather than calling sortItems() directly) actually perform the
-        # sort — the same mechanism a real click on one of its own headers uses.
-        header.setSortIndicator(column, order)
+    def _on_header_clicked(self, column: int) -> None:
+        # No-op on Authors/Available (and Action, if present) — see _SORT_COLUMNS.
+        # Fires from either header (native _table clicks, columns 2+; or _frozen_table's
+        # visually-overlaid header, columns 0/1) since both are wired to this handler.
+        field = _SORT_COLUMNS.get(column)
+        if field is None:
+            return
+        if self._sort_column == field:
+            self._sort_descending = not self._sort_descending
+        else:
+            self._sort_column = field
+            self._sort_descending = False
+        order = Qt.SortOrder.DescendingOrder if self._sort_descending else Qt.SortOrder.AscendingOrder
+        # Purely visual now (setSortingEnabled(False) means this no longer also
+        # triggers Qt's own row reorder) — the actual sort happens server-side below.
+        self._table.horizontalHeader().setSortIndicator(column, order)
+        self._page = 1
+        self._load_page()
 
     def _on_frozen_column_resized(self, index: int, old_size: int, new_size: int) -> None:
         self._sync_filter_column_width(index, new_size)
@@ -313,9 +359,6 @@ class CatalogView(QWidget):
         self._table.setColumnWidth(index, new_size)
         self._column_base_widths[index] = new_size
         self._stretch_columns()
-
-    def _on_table_sorted(self) -> None:
-        self._sync_frozen_rows()
 
     def _sync_frozen_rows(self) -> None:
         self._frozen_table.setRowCount(self._table.rowCount())
@@ -337,36 +380,60 @@ class CatalogView(QWidget):
             self._column_filters[index].setFixedWidth(new_size)
 
     def refresh(self) -> None:
-        self._entries = self._search_catalog.execute("")
-        self._apply_filters()
+        self._load_page()
 
-    def _apply_filters(self) -> None:
-        filters = [box.text().strip().lower() for box in self._column_filters]
-        matching = [entry for entry in self._entries if self._matches_filters(entry, filters)]
+    def _current_filters(self) -> CatalogFilters:
+        values = {field: self._column_filters[i].text().strip() for i, field in enumerate(_FILTER_FIELD_NAMES)}
+        return CatalogFilters(**values)
 
-        # Disable sorting while bulk-repopulating rows — otherwise Qt re-sorts after
-        # every single setItem() call, which is both slow and can scatter a row's
-        # cells across the wrong positions mid-insert.
-        self._table.setSortingEnabled(False)
-        self._table.setRowCount(len(matching))
-        self._frozen_table.setRowCount(len(matching))
-        for row, entry in enumerate(matching):
+    def _on_filters_changed(self) -> None:
+        self._page = 1
+        self._load_page()
+
+    def _on_previous(self) -> None:
+        if self._page > 1:
+            self._page -= 1
+            self._load_page()
+
+    def _on_next(self) -> None:
+        self._page += 1
+        self._load_page()
+
+    def _load_page(self) -> None:
+        result = self._search_catalog.execute(
+            self._current_filters(),
+            sort_column=self._sort_column,
+            sort_descending=self._sort_descending,
+            page=self._page,
+            page_size=_PAGE_SIZE,
+        )
+        # A stale Next click (or a filter change shrinking the result set) can request
+        # a page past the new last page — clamp and reload once rather than show it empty.
+        if not result.entries and self._page > result.total_pages:
+            self._page = result.total_pages
+            result = self._search_catalog.execute(
+                self._current_filters(),
+                sort_column=self._sort_column,
+                sort_descending=self._sort_descending,
+                page=self._page,
+                page_size=_PAGE_SIZE,
+            )
+        self._populate_table(result)
+
+    def _populate_table(self, result: CatalogPage) -> None:
+        self._entries = result.entries
+        self._table.setRowCount(len(result.entries))
+        self._frozen_table.setRowCount(len(result.entries))
+        for row, entry in enumerate(result.entries):
             self._set_row(row, entry)
-        self._table.setSortingEnabled(True)
-        # Re-enabling sorting can itself reorder rows immediately (if a sort indicator
-        # was already active from an earlier click) without necessarily emitting
-        # sortIndicatorChanged — so _sync_frozen_rows is called explicitly here rather
-        # than relied on via that signal, which only covers a later interactive click.
         self._sync_frozen_rows()
         # Action's ResizeToContents width can only be known once its cell widgets
         # exist, i.e. after the rows above are populated — so the stretch/overlays
         # need to re-settle afterward too, not just when a column is dragged.
         self._stretch_columns()
-
-    @staticmethod
-    def _matches_filters(entry: CatalogEntry, filters: list[str]) -> bool:
-        values = CatalogView._row_values(entry)
-        return all(needle in value.lower() for needle, value in zip(filters, values) if needle)
+        self._page_label.setText(f"Page {result.page} of {result.total_pages} ({result.total_count} total)")
+        self._previous_button.setEnabled(result.page > 1)
+        self._next_button.setEnabled(result.page < result.total_pages)
 
     @staticmethod
     def _row_values(entry: CatalogEntry) -> list[str]:
@@ -434,6 +501,9 @@ class CatalogView(QWidget):
         # feedback that anything happened, inviting an accidental duplicate re-add.
         for box in self._column_filters:
             box.clear()
+        # A freshly added bibliography could sort/page anywhere under the active sort,
+        # so don't leave a stale self._page pointing past where it now lands.
+        self._page = 1
         self.refresh()
 
     def _on_edit_bibliography(self, bibliography_id: int) -> None:

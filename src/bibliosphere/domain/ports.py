@@ -16,6 +16,29 @@ from typing import Protocol
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
 
 
+@dataclass
+class CatalogFilters:
+    """Per-column prefix filters for BibliographyRepository.count/list_page.
+
+    An empty string means "no filter on this column" — mirrors CatalogView's
+    per-column filter boxes. Matching is prefix-only (e.g. call_number="813" matches
+    "813.54 HER" but not "X813.54"), not substring, so it can use a plain B-tree index.
+    `author` matches if ANY of the bibliography's credited authors' names starts with
+    the given text (an EXISTS-style match), not a substring of the joined author list.
+
+    No `available` field: that column is a derived available/total-items ratio, not a
+    stored column, so it stays display-only rather than filterable.
+    """
+
+    call_number: str = ""
+    title: str = ""
+    series_title: str = ""
+    isbn_issn: str = ""
+    edition: str = ""
+    publish_year: str = ""
+    author: str = ""
+
+
 class BibliographyRepository(Protocol):
     def add(self, bibliography: Bibliography) -> Bibliography: ...
     def update(self, bibliography: Bibliography) -> None: ...
@@ -23,8 +46,15 @@ class BibliographyRepository(Protocol):
     def get_by_id(self, bibliography_id: int) -> Bibliography | None: ...
     def get_by_isbn(self, isbn: str) -> Bibliography | None: ...
     def get_by_call_number(self, call_number: str) -> Bibliography | None: ...
-    def search(self, query: str) -> list[Bibliography]: ...
-    def list_all(self) -> list[Bibliography]: ...
+
+    # The catalog is unbounded (thousands of bibliographies), so it's paginated and
+    # filtered at the repository rather than loaded whole — mirrors LoanRepository's
+    # count_history/list_history_page. sort_column/sort_descending are separate from
+    # CatalogFilters since they describe how to order matches, not which ones match.
+    def count(self, filters: CatalogFilters) -> int: ...
+    def list_page(
+        self, filters: CatalogFilters, *, sort_column: str, sort_descending: bool, page: int, page_size: int
+    ) -> list[Bibliography]: ...
 
     def add_item(self, bibliography_id: int) -> Item: ...
     def remove_item(self, item_id: int) -> None: ...

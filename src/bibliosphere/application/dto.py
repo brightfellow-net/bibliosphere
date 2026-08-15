@@ -32,6 +32,20 @@ class CatalogEntry:
 
 
 @dataclass
+class CatalogPage:
+    """One page of catalog search results, for presentation use."""
+
+    entries: list[CatalogEntry]
+    total_count: int
+    page: int
+    page_size: int
+
+    @property
+    def total_pages(self) -> int:
+        return max(1, ceil(self.total_count / self.page_size))
+
+
+@dataclass
 class LoanView:
     """A loan resolved to display-friendly fields, for presentation use."""
 

@@ -1,6 +1,46 @@
 import sqlite3
 
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item
+from bibliosphere.domain.ports import CatalogFilters
+
+# Direct bibliography columns filterable/sortable via CatalogFilters/list_page's
+# sort_column — a whitelist so sort_column (though UI-driven, not user-typed) is never
+# string-interpolated straight into SQL. "author" isn't here: it isn't a plain column,
+# it's an EXISTS subquery (see _catalog_query_sql), and isn't offered as a sort key.
+_FILTERABLE_COLUMNS = ("call_number", "title", "series_title", "isbn_issn", "edition", "publish_year")
+
+
+def _like_prefix_param(text: str) -> str:
+    # Escape LIKE wildcards so a literal '%' or '_' in a search (e.g. "100% Wolf") is
+    # matched literally, then anchor the pattern to a prefix match (no leading '%') so
+    # it can use a plain B-tree index — unlike a substring '%text%' match.
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escaped}%"
+
+
+def _catalog_query_sql(filters: CatalogFilters) -> tuple[str, list[str]]:
+    """Returns (where_sql, params) for BibliographyRepository.count/list_page.
+
+    No dynamic FROM/JOIN is needed here (contrast loan_repository._history_query_sql):
+    the author filter is a self-contained EXISTS subquery rather than a join, so it
+    can't produce duplicate rows and doesn't need a DISTINCT.
+    """
+    conditions = []
+    params = []
+    for column in _FILTERABLE_COLUMNS:
+        value: str = getattr(filters, column)
+        if value:
+            conditions.append(f"bibliographies.{column} LIKE ? ESCAPE '\\'")
+            params.append(_like_prefix_param(value))
+    if filters.author:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM bibliography_authors ba JOIN authors a ON a.id = ba.author_id "
+            "WHERE ba.bibliography_id = bibliographies.id AND a.name LIKE ? ESCAPE '\\')"
+        )
+        params.append(_like_prefix_param(filters.author))
+    where_sql = " AND ".join(conditions) if conditions else "1 = 1"
+    return where_sql, params
+
 
 _UPDATABLE_COLUMNS = (
     "title",
@@ -71,26 +111,26 @@ class SqliteBibliographyRepository:
         row = self._conn.execute("SELECT * FROM bibliographies WHERE call_number = ?", (call_number,)).fetchone()
         return self._row_to_bibliography(row) if row else None
 
-    def search(self, query: str) -> list[Bibliography]:
-        # Escape LIKE wildcards in the raw query so a literal '%' or '_' in a search
-        # (e.g. "100% Wolf") is matched literally instead of as a wildcard — otherwise
-        # a lone '_' matches every row, since it means "any single character" in LIKE.
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        like = f"%{escaped}%"
-        rows = self._conn.execute(
-            """
-            SELECT DISTINCT b.* FROM bibliographies b
-            LEFT JOIN bibliography_authors ba ON ba.bibliography_id = b.id
-            LEFT JOIN authors a ON a.id = ba.author_id
-            WHERE b.title LIKE ? ESCAPE '\\' OR b.isbn_issn LIKE ? ESCAPE '\\' OR a.name LIKE ? ESCAPE '\\'
-            ORDER BY b.title
-            """,
-            (like, like, like),
-        ).fetchall()
-        return [self._row_to_bibliography(row) for row in rows]
+    def count(self, filters: CatalogFilters) -> int:
+        where_sql, params = _catalog_query_sql(filters)
+        row = self._conn.execute(
+            f"SELECT COUNT(*) AS n FROM bibliographies WHERE {where_sql}", params
+        ).fetchone()
+        return int(row["n"])
 
-    def list_all(self) -> list[Bibliography]:
-        rows = self._conn.execute("SELECT * FROM bibliographies ORDER BY title").fetchall()
+    def list_page(
+        self, filters: CatalogFilters, *, sort_column: str, sort_descending: bool, page: int, page_size: int
+    ) -> list[Bibliography]:
+        if sort_column not in _FILTERABLE_COLUMNS:
+            raise ValueError(f"Unsortable column: {sort_column!r}")
+        where_sql, params = _catalog_query_sql(filters)
+        direction = "DESC" if sort_descending else "ASC"
+        offset = (page - 1) * page_size
+        rows = self._conn.execute(
+            f"SELECT bibliographies.* FROM bibliographies WHERE {where_sql} "
+            f"ORDER BY bibliographies.{sort_column} {direction}, bibliographies.id ASC LIMIT ? OFFSET ?",
+            (*params, page_size, offset),
+        ).fetchall()
         return [self._row_to_bibliography(row) for row in rows]
 
     def add_item(self, bibliography_id: int) -> Item:

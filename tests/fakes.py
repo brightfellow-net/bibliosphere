@@ -7,7 +7,18 @@ from dataclasses import replace
 from itertools import count
 
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
-from bibliosphere.domain.ports import LoanHistoryFilters
+from bibliosphere.domain.ports import CatalogFilters, LoanHistoryFilters
+
+# Attribute getters for the sortable CatalogFilters columns, mirroring the
+# _FILTERABLE_COLUMNS whitelist in SqliteBibliographyRepository.
+_CATALOG_SORT_KEYS = {
+    "call_number": lambda b: b.call_number or "",
+    "title": lambda b: b.title,
+    "series_title": lambda b: b.series_title or "",
+    "isbn_issn": lambda b: b.isbn_issn or "",
+    "edition": lambda b: b.edition or "",
+    "publish_year": lambda b: b.publish_year or "",
+}
 
 
 class FakeBibliographyRepository:
@@ -45,18 +56,35 @@ class FakeBibliographyRepository:
     def get_by_call_number(self, call_number: str) -> Bibliography | None:
         return next((b for b in self._bibliographies.values() if b.call_number == call_number), None)
 
-    def search(self, query: str) -> list[Bibliography]:
-        query = query.lower()
+    def _matches_catalog_filters(self, bibliography: Bibliography, filters: CatalogFilters) -> bool:
+        def starts_with(value: str | None, needle: str) -> bool:
+            return not needle or (value or "").lower().startswith(needle.lower())
 
-        def matches(bibliography: Bibliography) -> bool:
-            author_names = " ".join(credit.author.name for credit in self.list_authors(bibliography.id))
-            haystack = f"{bibliography.title} {bibliography.isbn_issn or ''} {author_names}".lower()
-            return query in haystack
+        for column, key in _CATALOG_SORT_KEYS.items():
+            if not starts_with(key(bibliography), getattr(filters, column)):
+                return False
+        if filters.author:
+            names = [credit.author.name for credit in self.list_authors(bibliography.id)]
+            if not any(name.lower().startswith(filters.author.lower()) for name in names):
+                return False
+        return True
 
-        return [b for b in self._bibliographies.values() if matches(b)]
+    def _catalog_matches(
+        self, filters: CatalogFilters, *, sort_column: str, sort_descending: bool
+    ) -> list[Bibliography]:
+        matches = [b for b in self._bibliographies.values() if self._matches_catalog_filters(b, filters)]
+        key = _CATALOG_SORT_KEYS[sort_column]
+        return sorted(matches, key=lambda b: (key(b), b.id), reverse=sort_descending)
 
-    def list_all(self) -> list[Bibliography]:
-        return list(self._bibliographies.values())
+    def count(self, filters: CatalogFilters) -> int:
+        return len(self._catalog_matches(filters, sort_column="title", sort_descending=False))
+
+    def list_page(
+        self, filters: CatalogFilters, *, sort_column: str, sort_descending: bool, page: int, page_size: int
+    ) -> list[Bibliography]:
+        start = (page - 1) * page_size
+        matches = self._catalog_matches(filters, sort_column=sort_column, sort_descending=sort_descending)
+        return matches[start : start + page_size]
 
     def add_item(self, bibliography_id: int) -> Item:
         new_id = next(self._item_ids)
