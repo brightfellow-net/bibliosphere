@@ -9,8 +9,15 @@ from itertools import count
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
 from bibliosphere.domain.ports import CatalogFilters, LoanHistoryFilters
 
-# Attribute getters for the sortable CatalogFilters columns, mirroring the
-# _FILTERABLE_COLUMNS whitelist in SqliteBibliographyRepository.
+# Columns matched by a plain prefix startswith() check, mirroring
+# SqliteBibliographyRepository's _PREFIX_FILTER_COLUMNS. "title" is excluded — it
+# matches by substring instead (see _matches_catalog_filters), "author" isn't a plain
+# bibliography attribute at all.
+_PREFIX_FILTER_COLUMNS = ("call_number", "series_title", "isbn_issn", "edition", "publish_year")
+
+# Attribute getters for every sortable CatalogFilters column (title included — sorting
+# is unaffected by title's prefix->substring matching change), mirroring
+# SqliteBibliographyRepository's _SORTABLE_COLUMNS whitelist.
 _CATALOG_SORT_KEYS = {
     "call_number": lambda b: b.call_number or "",
     "title": lambda b: b.title,
@@ -60,12 +67,17 @@ class FakeBibliographyRepository:
         def starts_with(value: str | None, needle: str) -> bool:
             return not needle or (value or "").lower().startswith(needle.lower())
 
-        for column, key in _CATALOG_SORT_KEYS.items():
-            if not starts_with(key(bibliography), getattr(filters, column)):
+        def contains(value: str | None, needle: str) -> bool:
+            return not needle or needle.lower() in (value or "").lower()
+
+        for column in _PREFIX_FILTER_COLUMNS:
+            if not starts_with(getattr(bibliography, column), getattr(filters, column)):
                 return False
+        if not contains(bibliography.title, filters.title):
+            return False
         if filters.author:
             names = [credit.author.name for credit in self.list_authors(bibliography.id)]
-            if not any(name.lower().startswith(filters.author.lower()) for name in names):
+            if not any(filters.author.lower() in name.lower() for name in names):
                 return False
         return True
 

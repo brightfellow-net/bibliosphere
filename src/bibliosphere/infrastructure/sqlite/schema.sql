@@ -93,3 +93,62 @@ CREATE INDEX IF NOT EXISTS idx_loans_checkout_date ON loans (checkout_date DESC,
 -- An item can have at most one open (unreturned) loan at a time.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_loans_one_open_per_item
     ON loans (item_id) WHERE return_date IS NULL;
+
+-- Trigram-tokenized FTS5 indexes backing CatalogFilters' substring search on
+-- title/author (the other 5 filterable columns stay prefix-LIKE, see the indexes
+-- above). External-content tables (content=<table>, content_rowid='id') so FTS5
+-- doesn't duplicate the title/name text; the FTS rowid maps 1:1 onto the real
+-- primary key. Query the FTS table via its own `rowid` column, not `id` — the
+-- virtual table itself has no `id` column, content_rowid only tells FTS5 which
+-- content-table column to sync against.
+--
+-- External-content tables do not auto-sync, hence the triggers below.
+CREATE VIRTUAL TABLE IF NOT EXISTS bibliographies_title_fts USING fts5(
+    title, content='bibliographies', content_rowid='id', tokenize='trigram'
+);
+
+CREATE TRIGGER IF NOT EXISTS bibliographies_title_fts_ai AFTER INSERT ON bibliographies BEGIN
+    INSERT INTO bibliographies_title_fts(rowid, title) VALUES (new.id, new.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS bibliographies_title_fts_ad AFTER DELETE ON bibliographies BEGIN
+    INSERT INTO bibliographies_title_fts(bibliographies_title_fts, rowid, title)
+    VALUES ('delete', old.id, old.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS bibliographies_title_fts_au AFTER UPDATE ON bibliographies BEGIN
+    INSERT INTO bibliographies_title_fts(bibliographies_title_fts, rowid, title)
+    VALUES ('delete', old.id, old.title);
+    INSERT INTO bibliographies_title_fts(rowid, title) VALUES (new.id, new.title);
+END;
+
+-- Backfill/self-heal for rows written before this index existed. NOTE: an
+-- "INSERT ... SELECT ... WHERE id NOT IN (SELECT rowid FROM bibliographies_title_fts)"
+-- looks like the obvious idempotent approach but is BROKEN for external-content FTS5
+-- tables: a plain (non-MATCH) SELECT/COUNT against such a table reads straight through
+-- to the content table for any rowid, regardless of whether that rowid has actually
+-- been added to the trigram index yet — so that NOT-IN subquery is vacuously always
+-- empty once bibliographies has rows, and the backfill silently never runs (confirmed
+-- empirically). 'rebuild' is FTS5's documented command to fully regenerate the index
+-- from the current content table; it's the only reliable way to backfill/self-heal an
+-- external-content table, and running it unconditionally on every startup is safe
+-- (fully idempotent) — it's a one-time, ~150ms-at-4,126-rows startup cost (scales with
+-- content size, not a per-query cost), not the per-keystroke query path this feature
+-- is about.
+INSERT INTO bibliographies_title_fts(bibliographies_title_fts) VALUES ('rebuild');
+
+-- authors is insert-only today (AuthorRepository/SqliteAuthorRepository expose no
+-- update or remove), so only an AFTER INSERT trigger is needed here — mirrors how
+-- `items` has no status column for the same "don't write untestable code for a
+-- case the port can't produce" reasoning. If AuthorRepository ever grows
+-- update/remove, add AU/AD triggers mirroring bibliographies_title_fts's above.
+CREATE VIRTUAL TABLE IF NOT EXISTS authors_name_fts USING fts5(
+    name, content='authors', content_rowid='id', tokenize='trigram'
+);
+
+CREATE TRIGGER IF NOT EXISTS authors_name_fts_ai AFTER INSERT ON authors BEGIN
+    INSERT INTO authors_name_fts(rowid, name) VALUES (new.id, new.name);
+END;
+
+-- See the long comment above bibliographies_title_fts's backfill — same reasoning.
+INSERT INTO authors_name_fts(authors_name_fts) VALUES ('rebuild');

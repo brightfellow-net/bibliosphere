@@ -3,11 +3,17 @@ import sqlite3
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item
 from bibliosphere.domain.ports import CatalogFilters
 
-# Direct bibliography columns filterable/sortable via CatalogFilters/list_page's
-# sort_column — a whitelist so sort_column (though UI-driven, not user-typed) is never
-# string-interpolated straight into SQL. "author" isn't here: it isn't a plain column,
-# it's an EXISTS subquery (see _catalog_query_sql), and isn't offered as a sort key.
-_FILTERABLE_COLUMNS = ("call_number", "title", "series_title", "isbn_issn", "edition", "publish_year")
+# Columns matched via a plain prefix LIKE (indexable B-tree). "title" is excluded —
+# it matches via bibliographies_title_fts instead (substring, not prefix; see
+# _catalog_query_sql and schema.sql). "author" isn't a plain column at all — see the
+# EXISTS subquery below.
+_PREFIX_FILTER_COLUMNS = ("call_number", "series_title", "isbn_issn", "edition", "publish_year")
+
+# Whitelist for list_page's sort_column, so it (though UI-driven, not user-typed) is
+# never string-interpolated straight into SQL. Includes "title": it's still a plain
+# column you can ORDER BY, only *matching* it moved off LIKE. "author" isn't here:
+# it isn't a plain column and isn't offered as a sort key.
+_SORTABLE_COLUMNS = ("call_number", "title", "series_title", "isbn_issn", "edition", "publish_year")
 
 
 def _like_prefix_param(text: str) -> str:
@@ -18,26 +24,41 @@ def _like_prefix_param(text: str) -> str:
     return f"{escaped}%"
 
 
+def _fts_phrase(text: str) -> str:
+    # FTS5's query-string parser treats AND/OR/NOT, '"', '(', ')', ':', '-', '*' as
+    # syntax, independent of tokenizer. Wrapping the whole user string in one quoted
+    # phrase (doubling embedded '"', the SQL string-literal convention) forces
+    # contiguous-substring matching against the trigram index and neutralizes those
+    # characters as literal text instead of operators.
+    return '"' + text.replace('"', '""') + '"'
+
+
 def _catalog_query_sql(filters: CatalogFilters) -> tuple[str, list[str]]:
     """Returns (where_sql, params) for BibliographyRepository.count/list_page.
 
     No dynamic FROM/JOIN is needed here (contrast loan_repository._history_query_sql):
-    the author filter is a self-contained EXISTS subquery rather than a join, so it
-    can't produce duplicate rows and doesn't need a DISTINCT.
+    title/author match via FTS5 subqueries and the author filter is a self-contained
+    EXISTS, so none of this can produce duplicate rows or need a DISTINCT.
     """
     conditions = []
     params = []
-    for column in _FILTERABLE_COLUMNS:
+    for column in _PREFIX_FILTER_COLUMNS:
         value: str = getattr(filters, column)
         if value:
             conditions.append(f"bibliographies.{column} LIKE ? ESCAPE '\\'")
             params.append(_like_prefix_param(value))
+    if filters.title:
+        conditions.append(
+            "bibliographies.id IN "
+            "(SELECT rowid FROM bibliographies_title_fts WHERE bibliographies_title_fts MATCH ?)"
+        )
+        params.append(_fts_phrase(filters.title))
     if filters.author:
         conditions.append(
-            "EXISTS (SELECT 1 FROM bibliography_authors ba JOIN authors a ON a.id = ba.author_id "
-            "WHERE ba.bibliography_id = bibliographies.id AND a.name LIKE ? ESCAPE '\\')"
+            "EXISTS (SELECT 1 FROM bibliography_authors ba WHERE ba.bibliography_id = bibliographies.id "
+            "AND ba.author_id IN (SELECT rowid FROM authors_name_fts WHERE authors_name_fts MATCH ?))"
         )
-        params.append(_like_prefix_param(filters.author))
+        params.append(_fts_phrase(filters.author))
     where_sql = " AND ".join(conditions) if conditions else "1 = 1"
     return where_sql, params
 
@@ -121,7 +142,7 @@ class SqliteBibliographyRepository:
     def list_page(
         self, filters: CatalogFilters, *, sort_column: str, sort_descending: bool, page: int, page_size: int
     ) -> list[Bibliography]:
-        if sort_column not in _FILTERABLE_COLUMNS:
+        if sort_column not in _SORTABLE_COLUMNS:
             raise ValueError(f"Unsortable column: {sort_column!r}")
         where_sql, params = _catalog_query_sql(filters)
         direction = "DESC" if sort_descending else "ASC"

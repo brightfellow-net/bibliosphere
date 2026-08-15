@@ -231,7 +231,7 @@ def test_search_catalog_sorts_by_call_number_descending(bibliography_repo, autho
     assert [e.bibliography.call_number for e in result.entries] == ["CN-2", "CN-1"]
 
 
-def test_search_catalog_filters_by_author_prefix(bibliography_repo, author_repo, unit_of_work, loan_repo):
+def test_search_catalog_filters_by_author_substring(bibliography_repo, author_repo, unit_of_work, loan_repo):
     AddBibliography(bibliography_repo, author_repo, unit_of_work).execute(
         title="Dune", authors=["Herbert"], call_number="CN-7"
     )
@@ -242,5 +242,6 @@ def test_search_catalog_filters_by_author_prefix(bibliography_repo, author_repo,
     result = _search(bibliography_repo, loan_repo, CatalogFilters(author="Herb"))
     assert [e.bibliography.title for e in result.entries] == ["Dune"]
 
-    # Prefix, not substring — "erbert" doesn't start any author's name.
-    assert _search(bibliography_repo, loan_repo, CatalogFilters(author="erbert")).entries == []
+    # Substring, not prefix-only — "erbert" is a mid-string match of "Herbert".
+    result = _search(bibliography_repo, loan_repo, CatalogFilters(author="erbert"))
+    assert [e.bibliography.title for e in result.entries] == ["Dune"]

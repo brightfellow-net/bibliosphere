@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pytest
@@ -103,18 +104,79 @@ def test_catalog_paginates_and_sorts(conn):
     assert [b.call_number for b in descending] == ["CN-3", "CN-2", "CN-1"]
 
 
-def test_catalog_filter_escapes_like_wildcards_and_is_prefix_only(conn):
+def test_catalog_prefix_columns_escape_like_wildcards_and_stay_prefix_only(conn):
+    # call_number is one of the 5 columns that stay prefix-LIKE (unlike title/author,
+    # which moved to FTS5 substring matching below) — this locks that down.
     repo = SqliteBibliographyRepository(conn)
     dune = repo.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="CN-1"))
-    wolf = repo.add(Bibliography(id=None, title="100% Wolf", isbn_issn="456", call_number="CN-2"))
+    wolf = repo.add(Bibliography(id=None, title="100% Wolf", isbn_issn="456", call_number="100%-CN"))
 
     # A literal '_' shouldn't match every row via LIKE's single-character wildcard.
-    assert _page(repo, CatalogFilters(title="_")) == []
+    assert _page(repo, CatalogFilters(call_number="_")) == []
     # A literal '%' should still match its literal occurrence, not act as a wildcard.
-    assert _page(repo, CatalogFilters(title="100%")) == [wolf]
-    assert _page(repo, CatalogFilters(title="Dune")) == [dune]
-    # Prefix-only: a mid-string needle must not match, unlike the old substring search.
+    assert _page(repo, CatalogFilters(call_number="100%")) == [wolf]
+    assert _page(repo, CatalogFilters(call_number="CN-1")) == [dune]
+    # Prefix-only: a mid-string needle must not match.
+    assert _page(repo, CatalogFilters(call_number="N-1")) == []
+
+
+def test_catalog_title_filter_is_substring_not_prefix_only(conn):
+    repo = SqliteBibliographyRepository(conn)
+    dune = repo.add(Bibliography(id=None, title="Dune", call_number="CN-1"))
+
+    assert _page(repo, CatalogFilters(title="une")) == [dune]
+
+
+def test_catalog_title_filter_treats_fts_syntax_characters_as_literal_text(conn):
+    repo = SqliteBibliographyRepository(conn)
+    quoted = repo.add(Bibliography(id=None, title='Say "Hello" World', call_number="CN-1"))
+
+    assert _page(repo, CatalogFilters(title='"Hello"')) == [quoted]
+    # FTS5 query-syntax operators/characters must be treated as literal text, not
+    # interpreted as boolean operators or column filters — none of these appear
+    # literally in any title above, so each must match nothing, not raise, and not
+    # accidentally match everything.
+    for needle in ("AND", "OR", "NOT", "*", "-", ":"):
+        assert _page(repo, CatalogFilters(title=needle)) == []
+
+
+def test_catalog_title_filter_matches_substring_across_word_boundary(conn):
+    repo = SqliteBibliographyRepository(conn)
+    added = repo.add(Bibliography(id=None, title="The Man de la Torre Chronicles", call_number="CN-1"))
+
+    assert _page(repo, CatalogFilters(title="de la Torre")) == [added]
+
+
+def test_catalog_title_filter_is_case_insensitive(conn):
+    repo = SqliteBibliographyRepository(conn)
+    dune = repo.add(Bibliography(id=None, title="Dune", call_number="CN-1"))
+
+    assert _page(repo, CatalogFilters(title="DUNE")) == [dune]
+    assert _page(repo, CatalogFilters(title="dune")) == [dune]
+
+
+def test_catalog_title_filter_reflects_updates_and_removals(conn):
+    repo = SqliteBibliographyRepository(conn)
+    added = repo.add(Bibliography(id=None, title="Dune", call_number="CN-1"))
+    assert _page(repo, CatalogFilters(title="une")) == [added]
+
+    renamed = replace(added, title="Renamed")
+    repo.update(renamed)
     assert _page(repo, CatalogFilters(title="une")) == []
+    assert _page(repo, CatalogFilters(title="Renamed")) == [renamed]
+
+    repo.remove(added.id)
+    assert _page(repo, CatalogFilters(title="Renamed")) == []
+
+
+def test_catalog_author_filter_is_substring_not_prefix_only(conn):
+    repo = SqliteBibliographyRepository(conn)
+    authors = SqliteAuthorRepository(conn)
+    added = repo.add(Bibliography(id=None, title="Dune", call_number="CN-1"))
+    herbert = authors.add(Author(id=None, name="Frank Herbert"))
+    repo.set_authors(added.id, [herbert.id])
+
+    assert _page(repo, CatalogFilters(author="erbert")) == [added]
 
 
 def test_catalog_list_page_rejects_unsortable_column(conn):

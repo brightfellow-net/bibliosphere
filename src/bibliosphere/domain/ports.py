@@ -18,13 +18,16 @@ from bibliosphere.domain.entities import Author, Bibliography, BibliographyAutho
 
 @dataclass
 class CatalogFilters:
-    """Per-column prefix filters for BibliographyRepository.count/list_page.
+    """Per-column filters for BibliographyRepository.count/list_page.
 
     An empty string means "no filter on this column" — mirrors CatalogView's
-    per-column filter boxes. Matching is prefix-only (e.g. call_number="813" matches
-    "813.54 HER" but not "X813.54"), not substring, so it can use a plain B-tree index.
-    `author` matches if ANY of the bibliography's credited authors' names starts with
-    the given text (an EXISTS-style match), not a substring of the joined author list.
+    per-column filter boxes. `call_number`, `series_title`, `isbn_issn`, `edition`,
+    `publish_year` match by prefix (e.g. call_number="813" matches "813.54 HER" but
+    not "X813.54"), backed by a plain B-tree index. `title` and `author` match by
+    substring instead, case-insensitively, anywhere in the text (e.g. title="une"
+    matches "Dune"), backed by SQLite FTS5 trigram indexes — `author` matches if ANY
+    of the bibliography's credited authors' names contains the given text (an
+    EXISTS-style match, not a substring of the joined author list).
 
     No `available` field: that column is a derived available/total-items ratio, not a
     stored column, so it stays display-only rather than filterable.
