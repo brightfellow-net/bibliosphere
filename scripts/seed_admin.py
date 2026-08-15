@@ -13,10 +13,13 @@ from bibliosphere.application.use_cases.create_member import CreateMember
 from bibliosphere.application.use_cases.generate_member_id import GenerateMemberId
 from bibliosphere.domain.entities import Role
 from bibliosphere.domain.exceptions import BibliosphereError
-from bibliosphere.infrastructure.sqlite.connection import connect, init_schema
+from bibliosphere.infrastructure.sqlite.connection import connect, default_db_path, init_schema
 from bibliosphere.infrastructure.sqlite.member_repository import SqliteMemberRepository
 
-DB_PATH = Path(__file__).parent.parent / "data" / "bibliosphere.db"
+# Resolves to the exact same file main.py's frozen build would use — see
+# default_db_path's docstring — so running this (also packaged as its own frozen
+# executable, see bibliosphere.spec) actually seeds the database the app will open.
+DB_PATH = default_db_path(Path(__file__).parent.parent / "data" / "bibliosphere.db")
 
 
 def main() -> int:

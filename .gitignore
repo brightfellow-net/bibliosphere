@@ -4,3 +4,6 @@ __pycache__/
 *.egg-info/
 data/*.db
 .pytest_cache/
+# PyInstaller build output (see bibliosphere.spec) — rebuilt from source, not checked in.
+build/
+dist/

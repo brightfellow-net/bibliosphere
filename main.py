@@ -27,13 +27,13 @@ from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.infrastructure.sqlite.author_repository import SqliteAuthorRepository
 from bibliosphere.infrastructure.sqlite.bibliography_repository import SqliteBibliographyRepository
-from bibliosphere.infrastructure.sqlite.connection import connect, init_schema
+from bibliosphere.infrastructure.sqlite.connection import connect, default_db_path, init_schema
 from bibliosphere.infrastructure.sqlite.loan_repository import SqliteLoanRepository
 from bibliosphere.infrastructure.sqlite.member_repository import SqliteMemberRepository
 from bibliosphere.infrastructure.sqlite.unit_of_work import SqliteUnitOfWork
 from bibliosphere.presentation.qt.main_window import MainWindow
 
-DB_PATH = Path(__file__).parent / "data" / "bibliosphere.db"
+DB_PATH = default_db_path(Path(__file__).parent / "data" / "bibliosphere.db")
 
 
 def build_use_cases(db_path: Path) -> UseCases:

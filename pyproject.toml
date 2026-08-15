@@ -12,6 +12,11 @@ dev = [
     "pytest>=8.0",
     "mypy>=1.14",
 ]
+# Packaging the app into a standalone binary (see bibliosphere.spec) is a separate
+# concern from day-to-day dev tooling above, hence its own extra.
+build = [
+    "pyinstaller>=6.10",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -21,7 +26,11 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-bibliosphere = ["py.typed"]
+# schema.sql is loaded at runtime via importlib.resources (see
+# infrastructure/sqlite/connection.py), not a plain relative-path file read, so it must
+# be declared here to end up inside a built wheel/sdist (and therefore inside a
+# PyInstaller bundle, which collects data files via this same declaration).
+bibliosphere = ["py.typed", "*.sql"]
 
 [tool.mypy]
 python_version = "3.12"
