@@ -43,6 +43,12 @@ def _history_query_sql(filters: LoanHistoryFilters) -> tuple[str, str, list[str]
     if filters.checkout_date:
         conditions.append("loans.checkout_date LIKE ? ESCAPE '\\'")
         params.append(_like_param(filters.checkout_date))
+    if filters.checkout_date_from is not None:
+        conditions.append("loans.checkout_date >= ?")
+        params.append(filters.checkout_date_from.isoformat())
+    if filters.checkout_date_to is not None:
+        conditions.append("loans.checkout_date <= ?")
+        params.append(filters.checkout_date_to.isoformat())
     if filters.due_date:
         conditions.append("loans.due_date LIKE ? ESCAPE '\\'")
         params.append(_like_param(filters.due_date))

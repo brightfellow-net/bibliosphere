@@ -351,3 +351,39 @@ def test_remove_item_with_returned_loan_raises_cleanly_not_integrity_error(conn)
     with pytest.raises(ItemHasLoanHistory):
         RemoveItem(bibliographies, loans).execute(item.id)
     assert bibliographies.get_item(item.id) is not None
+
+
+def test_loan_repository_history_filters_by_checkout_date_range(conn):
+    bibliographies = SqliteBibliographyRepository(conn)
+    members = SqliteMemberRepository(conn)
+    loans = SqliteLoanRepository(conn)
+
+    bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
+    member = members.add(
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+    )
+
+    dates = [date(2026, 1, 1), date(2026, 1, 10), date(2026, 1, 20), date(2026, 2, 1)]
+    ids_by_date = {}
+    for checkout_date in dates:
+        item = bibliographies.add_item(bibliography.id)
+        loan = loans.add(
+            Loan(id=None, item_id=item.id, member_id=member.id, checkout_date=checkout_date, due_date=checkout_date)
+        )
+        ids_by_date[checkout_date] = loan.id
+
+    # Inclusive on both ends.
+    in_range = loans.list_history_page(
+        LoanHistoryFilters(checkout_date_from=date(2026, 1, 5), checkout_date_to=date(2026, 1, 20)),
+        page=1,
+        page_size=200,
+    )
+    assert {loan.id for loan in in_range} == {ids_by_date[date(2026, 1, 10)], ids_by_date[date(2026, 1, 20)]}
+
+    from_only = loans.list_history_page(
+        LoanHistoryFilters(checkout_date_from=date(2026, 1, 20)), page=1, page_size=200
+    )
+    assert {loan.id for loan in from_only} == {ids_by_date[date(2026, 1, 20)], ids_by_date[date(2026, 2, 1)]}
+
+    to_only = loans.list_history_page(LoanHistoryFilters(checkout_date_to=date(2026, 1, 1)), page=1, page_size=200)
+    assert {loan.id for loan in to_only} == {ids_by_date[date(2026, 1, 1)]}

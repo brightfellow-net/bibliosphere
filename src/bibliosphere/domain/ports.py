@@ -10,6 +10,7 @@ standalone master data, so their own CRUD lives on AuthorRepository instead
 """
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 
 from bibliosphere.domain.entities import Author, Bibliography, BibliographyAuthor, Item, Loan, Member
@@ -59,6 +60,11 @@ class LoanHistoryFilters:
     An empty string means "no filter on this column" — mirrors LoanHistoryView's
     per-column filter boxes. `status` matches against the literal words "checked out"
     / "returned" (e.g. "out" matches only checked-out loans).
+
+    `checkout_date_from`/`checkout_date_to` are a separate range filter (inclusive on
+    both ends), distinct from the `checkout_date` substring filter above — the range
+    is what LoanHistoryView's dedicated date-range picker sets; `checkout_date` is
+    still available for substring matches (e.g. "2026-03") within that range.
     """
 
     member_id: str = ""
@@ -68,6 +74,8 @@ class LoanHistoryFilters:
     due_date: str = ""
     return_date: str = ""
     status: str = ""
+    checkout_date_from: date | None = None
+    checkout_date_to: date | None = None
 
 
 class LoanRepository(Protocol):

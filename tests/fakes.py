@@ -218,6 +218,10 @@ class FakeLoanRepository:
             return False
         if filters.checkout_date and filters.checkout_date.lower() not in loan.checkout_date.isoformat():
             return False
+        if filters.checkout_date_from is not None and loan.checkout_date < filters.checkout_date_from:
+            return False
+        if filters.checkout_date_to is not None and loan.checkout_date > filters.checkout_date_to:
+            return False
         if filters.due_date and filters.due_date.lower() not in loan.due_date.isoformat():
             return False
         if filters.return_date:

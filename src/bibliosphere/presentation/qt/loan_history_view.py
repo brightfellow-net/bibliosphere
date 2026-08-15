@@ -1,6 +1,9 @@
-from PySide6.QtCore import QTimer
+from datetime import date
+
+from PySide6.QtCore import QDate, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QDateEdit,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -24,6 +27,17 @@ _PAGE_SIZE = 200
 # A member_name/title filter needs a substring scan across the whole (unbounded)
 # history — debounce so typing doesn't fire one such query per keystroke.
 _FILTER_DEBOUNCE_MS = 300
+_DEFAULT_DATE_RANGE_DAYS = 7
+# Enforced by keeping each QDateEdit's own min/max in sync with the other (see
+# _on_checkout_from_changed/_on_checkout_to_changed) — an out-of-range date simply
+# can't be entered, rather than being validated after the fact.
+_MAX_DATE_RANGE_DAYS = 31
+
+
+def _to_date(qdate: QDate) -> date:
+    # QDate.toPython() is typed as `object` in the PySide6 stubs, so build a `date`
+    # from its parts directly instead — keeps this fully mypy --strict clean.
+    return date(qdate.year(), qdate.month(), qdate.day())
 
 
 class LoanHistoryView(QWidget):
@@ -40,6 +54,29 @@ class LoanHistoryView(QWidget):
         self._filter_debounce.setSingleShot(True)
         self._filter_debounce.setInterval(_FILTER_DEBOUNCE_MS)
         self._filter_debounce.timeout.connect(self._on_filters_changed)
+
+        # Separate from the per-column text filters below: bounds which slice of the
+        # (unbounded) history they search within, defaulting to the last week so the
+        # view never has to scan the full history just to show something on open.
+        self._checkout_from = QDateEdit(QDate.currentDate().addDays(-_DEFAULT_DATE_RANGE_DAYS))
+        self._checkout_to = QDateEdit(QDate.currentDate())
+        for date_edit in (self._checkout_from, self._checkout_to):
+            date_edit.setCalendarPopup(True)
+            date_edit.setDisplayFormat("yyyy-MM-dd")
+        self._checkout_to.setMinimumDate(self._checkout_from.date())
+        self._checkout_to.setMaximumDate(self._checkout_from.date().addDays(_MAX_DATE_RANGE_DAYS))
+        self._checkout_from.setMaximumDate(self._checkout_to.date())
+        self._checkout_from.setMinimumDate(self._checkout_to.date().addDays(-_MAX_DATE_RANGE_DAYS))
+        self._checkout_from.dateChanged.connect(self._on_checkout_from_changed)
+        self._checkout_to.dateChanged.connect(self._on_checkout_to_changed)
+
+        date_range_row = QHBoxLayout()
+        date_range_row.addWidget(QLabel("Checkout Date Range:"))
+        date_range_row.addWidget(self._checkout_from)
+        date_range_row.addWidget(QLabel("to"))
+        date_range_row.addWidget(self._checkout_to)
+        date_range_row.addWidget(QLabel(f"(max {_MAX_DATE_RANGE_DAYS} days)"))
+        date_range_row.addStretch()
 
         self._column_filters: dict[str, QLineEdit] = {}
         filter_row = QHBoxLayout()
@@ -73,6 +110,7 @@ class LoanHistoryView(QWidget):
         pagination_row.addStretch()
 
         layout = QVBoxLayout(self)
+        layout.addLayout(date_range_row)
         layout.addLayout(filter_row)
         layout.addWidget(self._table)
         layout.addLayout(pagination_row)
@@ -83,11 +121,28 @@ class LoanHistoryView(QWidget):
         self._load_page()
 
     def _current_filters(self) -> LoanHistoryFilters:
-        return LoanHistoryFilters(**{field: box.text().strip() for field, box in self._column_filters.items()})
+        text_filters = {field: box.text().strip() for field, box in self._column_filters.items()}
+        return LoanHistoryFilters(
+            **text_filters,
+            checkout_date_from=_to_date(self._checkout_from.date()),
+            checkout_date_to=_to_date(self._checkout_to.date()),
+        )
 
     def _on_filters_changed(self) -> None:
         self._page = 1
         self._load_page()
+
+    def _on_checkout_from_changed(self, new_from: QDate) -> None:
+        # Keep "to" within [new_from, new_from + max] — if its current value falls
+        # outside that, Qt clamps it into range itself (no manual date-setting needed).
+        self._checkout_to.setMinimumDate(new_from)
+        self._checkout_to.setMaximumDate(new_from.addDays(_MAX_DATE_RANGE_DAYS))
+        self._filter_debounce.start()
+
+    def _on_checkout_to_changed(self, new_to: QDate) -> None:
+        self._checkout_from.setMaximumDate(new_to)
+        self._checkout_from.setMinimumDate(new_to.addDays(-_MAX_DATE_RANGE_DAYS))
+        self._filter_debounce.start()
 
     def _on_previous(self) -> None:
         if self._page > 1:

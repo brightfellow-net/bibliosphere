@@ -9,7 +9,7 @@ from bibliosphere.application.use_cases.list_loan_history import ListLoanHistory
 from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
 from bibliosphere.application.use_cases.return_item import ReturnItem
-from bibliosphere.domain.entities import Role
+from bibliosphere.domain.entities import Loan, Role
 from bibliosphere.domain.ports import LoanHistoryFilters
 
 _isbn_counter = count(100)
@@ -97,3 +97,24 @@ def test_loan_history_paginates_and_filters(bibliography_repo, author_repo, unit
     no_match = history.execute(LoanHistoryFilters(member_name="bob"), page=1, page_size=200)
     assert no_match.total_count == 0
     assert no_match.views == []
+
+
+def test_loan_history_filters_by_checkout_date_range(bibliography_repo, author_repo, unit_of_work, member_repo, loan_repo):
+    bibliography = _make_bibliography_with_items(bibliography_repo, author_repo, unit_of_work, n_items=3)
+    alice = _create_member(member_repo, "alice", "Alice", "pw", Role.PATRON)
+    items = bibliography_repo.list_items(bibliography.id)
+
+    for item, checkout_date in zip(items, [date(2026, 1, 1), date(2026, 1, 15), date(2026, 2, 1)]):
+        loan_repo.add(
+            Loan(id=None, item_id=item.id, member_id=alice.id, checkout_date=checkout_date, due_date=checkout_date)
+        )
+
+    history = ListLoanHistory(loan_repo, bibliography_repo, member_repo)
+
+    result = history.execute(
+        LoanHistoryFilters(checkout_date_from=date(2026, 1, 10), checkout_date_to=date(2026, 1, 20)),
+        page=1,
+        page_size=200,
+    )
+    assert result.total_count == 1
+    assert result.views[0].loan.checkout_date == date(2026, 1, 15)
