@@ -6,6 +6,7 @@ from bibliosphere.application.container import UseCases
 from bibliosphere.domain.entities import Member, Role
 from bibliosphere.presentation.qt.catalog_view import CatalogView
 from bibliosphere.presentation.qt.checkout_view import CheckoutView
+from bibliosphere.presentation.qt.loan_history_view import LoanHistoryView
 from bibliosphere.presentation.qt.login_view import LoginView
 from bibliosphere.presentation.qt.member_view import MemberView
 from bibliosphere.presentation.qt.my_loans_view import MyLoansView
@@ -68,6 +69,10 @@ class MainWindow(QMainWindow):
             )
             tabs.addTab(checkout, "Checkout / Return")
             views.append(checkout)
+
+            loan_history = LoanHistoryView(uc.list_loan_history)
+            tabs.addTab(loan_history, "Loan History")
+            views.append(loan_history)
         else:
             catalog = CatalogView(uc.search_catalog)
             tabs.addTab(catalog, "Catalog")

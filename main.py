@@ -16,6 +16,7 @@ from bibliosphere.application.use_cases.edit_bibliography import EditBibliograph
 from bibliosphere.application.use_cases.edit_member import EditMember
 from bibliosphere.application.use_cases.generate_member_id import GenerateMemberId
 from bibliosphere.application.use_cases.list_authors import ListAuthors
+from bibliosphere.application.use_cases.list_loan_history import ListLoanHistory
 from bibliosphere.application.use_cases.list_member_loans import ListMemberLoans
 from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
@@ -63,6 +64,7 @@ def build_use_cases(db_path: Path) -> UseCases:
         return_item=ReturnItem(loans),
         list_member_loans=ListMemberLoans(members, loans, bibliographies),
         list_open_loans=ListOpenLoans(loans, bibliographies, members),
+        list_loan_history=ListLoanHistory(loans, bibliographies, members),
     )
 
 

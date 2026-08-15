@@ -57,6 +57,10 @@ class SqliteLoanRepository:
         rows = self._conn.execute("SELECT * FROM loans WHERE return_date IS NULL ORDER BY due_date").fetchall()
         return [self._row_to_loan(row) for row in rows]
 
+    def list_all(self) -> list[Loan]:
+        rows = self._conn.execute("SELECT * FROM loans ORDER BY checkout_date DESC, id DESC").fetchall()
+        return [self._row_to_loan(row) for row in rows]
+
     def count_open_loans_for_member(self, member_id: str) -> int:
         row = self._conn.execute(
             "SELECT COUNT(*) AS n FROM loans WHERE member_id = ? AND return_date IS NULL", (member_id,)

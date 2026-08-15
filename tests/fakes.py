@@ -183,5 +183,8 @@ class FakeLoanRepository:
     def list_all_open_loans(self) -> list[Loan]:
         return [loan for loan in self._loans.values() if loan.is_open]
 
+    def list_all(self) -> list[Loan]:
+        return sorted(self._loans.values(), key=lambda loan: (loan.checkout_date, loan.id), reverse=True)
+
     def count_open_loans_for_member(self, member_id: str) -> int:
         return len(self.list_open_loans_for_member(member_id))

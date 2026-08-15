@@ -188,3 +188,31 @@ def test_loan_repository_open_loan_tracking(conn):
 
     assert loans.get_open_loan_for_item(item.id) is None
     assert loans.count_open_loans_for_member(member.id) == 0
+
+
+def test_loan_repository_list_all_includes_open_and_returned(conn):
+    bibliographies = SqliteBibliographyRepository(conn)
+    members = SqliteMemberRepository(conn)
+    loans = SqliteLoanRepository(conn)
+
+    bibliography = bibliographies.add(Bibliography(id=None, title="Dune", isbn_issn="123", call_number="813.54 HER"))
+    item1 = bibliographies.add_item(bibliography.id)
+    item2 = bibliographies.add_item(bibliography.id)
+    member = members.add(
+        Member(id="M0001", username="alice", name="Alice", role=Role.PATRON, password_hash="h", password_salt="s")
+    )
+
+    today = date.today()
+    open_loan = loans.add(
+        Loan(id=None, item_id=item1.id, member_id=member.id, checkout_date=today, due_date=today + timedelta(days=14))
+    )
+    returned_loan = loans.add(
+        Loan(id=None, item_id=item2.id, member_id=member.id, checkout_date=today, due_date=today + timedelta(days=14))
+    )
+    returned_loan.return_date = today
+    loans.update(returned_loan)
+
+    all_loans = loans.list_all()
+
+    assert {loan.id for loan in all_loans} == {open_loan.id, returned_loan.id}
+    assert {loan.id: loan.is_open for loan in all_loans} == {open_loan.id: True, returned_loan.id: False}
