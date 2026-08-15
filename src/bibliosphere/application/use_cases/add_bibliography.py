@@ -1,5 +1,6 @@
 from bibliosphere.domain.entities import Bibliography
 from bibliosphere.domain.exceptions import DuplicateCallNumber, DuplicateIsbn, InvalidBibliographyDetails
+from bibliosphere.domain.ids import require_id
 from bibliosphere.domain.ports import AuthorRepository, BibliographyRepository, UnitOfWork
 
 
@@ -68,7 +69,7 @@ class AddBibliography:
             created = self._bibliographies.add(bibliography)
 
             unique_authors = list(dict.fromkeys(authors))
-            author_ids = [self._authors.find_or_create_by_name(name).id for name in unique_authors]
-            self._bibliographies.set_authors(created.id, author_ids)
+            author_ids = [require_id(self._authors.find_or_create_by_name(name).id) for name in unique_authors]
+            self._bibliographies.set_authors(require_id(created.id), author_ids)
 
         return created

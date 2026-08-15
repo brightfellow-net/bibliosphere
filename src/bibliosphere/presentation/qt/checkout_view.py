@@ -23,6 +23,7 @@ from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.domain.entities import Member
 from bibliosphere.domain.exceptions import BibliosphereError
+from bibliosphere.domain.ids import require_id
 
 
 class CheckoutView(QWidget):
@@ -194,7 +195,7 @@ class CheckoutView(QWidget):
             )
             return
         try:
-            loan = self._checkout_item.execute(entry.bibliography.id, member.id)
+            loan = self._checkout_item.execute(require_id(entry.bibliography.id), member.id)
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not check out", str(error))
             return
@@ -209,7 +210,7 @@ class CheckoutView(QWidget):
         if row < 0 or row >= len(self._displayed_loans):
             QMessageBox.information(self, "No selection", "Select a loan to return first.")
             return
-        loan_id = self._displayed_loans[row].loan.id
+        loan_id = require_id(self._displayed_loans[row].loan.id)
         try:
             self._return_item.execute(loan_id)
         except BibliosphereError as error:

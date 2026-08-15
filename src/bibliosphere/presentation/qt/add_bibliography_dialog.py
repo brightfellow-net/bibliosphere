@@ -31,13 +31,16 @@ class AddBibliographyDialog(QDialog):
     bibliography_added = Signal()
 
     def __init__(
-        self, add_bibliography: AddBibliography, all_author_names: list[str] = (), parent: QWidget | None = None
+        self,
+        add_bibliography: AddBibliography,
+        all_author_names: list[str] | None = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Add Bibliography")
         self.resize(480, 240)
         self._add_bibliography = add_bibliography
-        self._all_author_names = list(all_author_names)
+        self._all_author_names = list(all_author_names or [])
         self._authors: list[str] = []
 
         self._call_number = QLineEdit()

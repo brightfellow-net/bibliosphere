@@ -42,9 +42,9 @@ class CreateMember:
         if self._members.get_by_id(member_id) is not None:
             raise DuplicateMemberId(f"Member id {member_id!r} is already in use")
 
-        username = username.strip() or None
-        if username is not None and self._members.get_by_username(username) is not None:
-            raise DuplicateUsername(f"Username {username!r} is already taken")
+        normalized_username = username.strip() or None
+        if normalized_username is not None and self._members.get_by_username(normalized_username) is not None:
+            raise DuplicateUsername(f"Username {normalized_username!r} is already taken")
 
         if password:
             password_hash, salt = hash_password(password)
@@ -52,7 +52,7 @@ class CreateMember:
             password_hash, salt = None, None
         member = Member(
             id=member_id,
-            username=username,
+            username=normalized_username,
             name=name,
             role=role,
             password_hash=password_hash,

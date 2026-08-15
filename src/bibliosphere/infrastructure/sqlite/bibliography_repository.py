@@ -37,7 +37,11 @@ class SqliteBibliographyRepository:
         cursor = self._conn.execute(
             f"INSERT INTO bibliographies ({columns}) VALUES ({placeholders})", values
         )
-        return self.get_by_id(cursor.lastrowid)
+        new_id = cursor.lastrowid
+        assert new_id is not None
+        created = self.get_by_id(new_id)
+        assert created is not None
+        return created
 
     def update(self, bibliography: Bibliography) -> None:
         # No commit here — see add()'s note; EditBibliography controls the transaction.

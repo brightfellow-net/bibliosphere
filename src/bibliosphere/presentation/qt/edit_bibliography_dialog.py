@@ -16,6 +16,7 @@ from bibliosphere.application.dto import CatalogEntry
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.domain.exceptions import BibliosphereError
+from bibliosphere.domain.ids import require_id
 from bibliosphere.presentation.qt.manage_authors_dialog import ManageAuthorsDialog
 
 _CLOSE_DELAY_MS = 1000
@@ -34,7 +35,7 @@ class EditBibliographyDialog(QDialog):
         entry: CatalogEntry,
         edit_bibliography: EditBibliography,
         set_bibliography_authors: SetBibliographyAuthors | None = None,
-        all_author_names: list[str] = (),
+        all_author_names: list[str] | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -43,7 +44,7 @@ class EditBibliographyDialog(QDialog):
         self._bibliography = entry.bibliography
         self._edit_bibliography = edit_bibliography
         self._set_bibliography_authors = set_bibliography_authors
-        self._all_author_names = list(all_author_names)
+        self._all_author_names = list(all_author_names or [])
         self._current_authors = [credit.author.name for credit in entry.authors]
 
         self._call_number = QLineEdit(entry.bibliography.call_number or "")
@@ -95,6 +96,8 @@ class EditBibliographyDialog(QDialog):
         )
 
     def _on_manage_authors(self) -> None:
+        assert self._set_bibliography_authors is not None
+        set_bibliography_authors = self._set_bibliography_authors
         title = self._title.text().strip()
         dialog = ManageAuthorsDialog(title, self._current_authors, self._all_author_names, self)
         if not dialog.exec():
@@ -105,7 +108,7 @@ class EditBibliographyDialog(QDialog):
             # staged-until-OK approach — persist immediately: the author list is a
             # fully separate, independently-committed action from the rest of this
             # dialog's fields, taking effect even if the outer edit is then cancelled.
-            self._set_bibliography_authors.execute(self._bibliography.id, new_authors)
+            set_bibliography_authors.execute(require_id(self._bibliography.id), new_authors)
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not update authors", str(error))
             return
@@ -121,7 +124,7 @@ class EditBibliographyDialog(QDialog):
             # list if untouched) — this write is therefore a harmless no-op for authors
             # in the common case, not a second source of truth for them.
             self._edit_bibliography.execute(
-                existing.id,
+                require_id(existing.id),
                 title=self._title.text().strip(),
                 authors=self._current_authors,
                 call_number=self._call_number.text().strip(),

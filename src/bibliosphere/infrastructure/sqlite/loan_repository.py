@@ -61,7 +61,7 @@ class SqliteLoanRepository:
         row = self._conn.execute(
             "SELECT COUNT(*) AS n FROM loans WHERE member_id = ? AND return_date IS NULL", (member_id,)
         ).fetchone()
-        return row["n"]
+        return int(row["n"])
 
     @staticmethod
     def _row_to_loan(row: sqlite3.Row) -> Loan:

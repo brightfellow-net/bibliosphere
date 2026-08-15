@@ -10,6 +10,8 @@ class AuthenticateUser:
 
     def execute(self, username: str, password: str) -> Member:
         member = self._members.get_by_username(username)
-        if member is None or not verify_password(password, member.password_hash, member.password_salt):
+        if member is None or member.password_hash is None or member.password_salt is None:
+            raise InvalidCredentials("Invalid username or password")
+        if not verify_password(password, member.password_hash, member.password_salt):
             raise InvalidCredentials("Invalid username or password")
         return member

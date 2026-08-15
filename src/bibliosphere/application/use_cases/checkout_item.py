@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from bibliosphere.application.config import LOAN_PERIOD_DAYS, MAX_LOANS_PER_MEMBER
 from bibliosphere.domain.entities import Loan
 from bibliosphere.domain.exceptions import BibliographyNotFound, ItemNotAvailable, LoanLimitExceeded, MemberNotFound
+from bibliosphere.domain.ids import require_id
 from bibliosphere.domain.ports import BibliographyRepository, LoanRepository, MemberRepository
 
 
@@ -30,7 +31,7 @@ class CheckoutItem:
             (
                 item
                 for item in self._bibliographies.list_items(bibliography_id)
-                if self._loans.get_open_loan_for_item(item.id) is None
+                if self._loans.get_open_loan_for_item(require_id(item.id)) is None
             ),
             None,
         )
@@ -40,7 +41,7 @@ class CheckoutItem:
         today = date.today()
         loan = Loan(
             id=None,
-            item_id=available_item.id,
+            item_id=require_id(available_item.id),
             member_id=member_id,
             checkout_date=today,
             due_date=today + timedelta(days=LOAN_PERIOD_DAYS),

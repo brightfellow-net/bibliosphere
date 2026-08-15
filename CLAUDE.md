@@ -16,10 +16,14 @@ source .venv/bin/activate        # or: pip install -e ".[dev]" into a fresh venv
 
 pytest                            # run the full test suite
 pytest tests/application/test_loans.py::test_checkout_item_enforces_loan_limit  # single test
+mypy                               # strict type check (config in pyproject.toml's [tool.mypy])
 
 python scripts/seed_admin.py      # one-time: create the first librarian account
 python main.py                    # run the app (uses data/bibliosphere.db, created on first run)
 ```
+
+`mypy --strict` must pass with zero errors — narrow `Optional` entity ids with
+`domain.ids.require_id()` rather than loosening a port's signature to accept `int | None`.
 
 There is no lint/format tool configured yet — add one (e.g. ruff) if the codebase grows
 enough to warrant it.

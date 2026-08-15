@@ -21,7 +21,7 @@ class Member:
     require one. See CreateMember/EditMember for the role-conditional validation.
     """
 
-    id: str | None
+    id: str
     username: str | None
     name: str
     role: Role

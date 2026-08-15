@@ -39,12 +39,14 @@ class EditMember:
         if role is Role.LIBRARIAN and not password and existing.password_hash is None:
             raise InvalidMemberDetails("Librarian accounts require a password")
 
-        username = username.strip() or None
-        if username is not None:
-            other = self._members.get_by_username(username)
+        normalized_username = username.strip() or None
+        if normalized_username is not None:
+            other = self._members.get_by_username(normalized_username)
             if other is not None and other.id != member_id:
-                raise DuplicateUsername(f"Username {username!r} is already taken")
+                raise DuplicateUsername(f"Username {normalized_username!r} is already taken")
 
+        password_hash: str | None
+        password_salt: str | None
         if password:
             password_hash, password_salt = hash_password(password)
         else:
@@ -52,7 +54,7 @@ class EditMember:
 
         updated = Member(
             id=member_id,
-            username=username,
+            username=normalized_username,
             name=name,
             role=role,
             password_hash=password_hash,

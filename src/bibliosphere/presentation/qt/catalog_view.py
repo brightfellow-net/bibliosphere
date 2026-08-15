@@ -23,6 +23,7 @@ from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
 from bibliosphere.domain.exceptions import BibliosphereError
+from bibliosphere.domain.ids import require_id
 from bibliosphere.presentation.qt.add_bibliography_dialog import AddBibliographyDialog
 from bibliosphere.presentation.qt.edit_bibliography_dialog import EditBibliographyDialog
 
@@ -230,7 +231,9 @@ class CatalogView(QWidget):
         for column, value in enumerate(self._row_values(entry)):
             self._table.setItem(row, column, QTableWidgetItem(value))
         if self._show_actions:
-            self._table.setCellWidget(row, len(_COLUMN_LABELS), self._make_action_widget(entry.bibliography.id))
+            self._table.setCellWidget(
+                row, len(_COLUMN_LABELS), self._make_action_widget(require_id(entry.bibliography.id))
+            )
 
     def _make_action_widget(self, bibliography_id: int) -> QWidget:
         widget = QWidget()
@@ -262,8 +265,10 @@ class CatalogView(QWidget):
         return next((entry for entry in self._entries if entry.bibliography.id == bibliography_id), None)
 
     def _on_add_bibliography(self) -> None:
+        assert self._add_bibliography is not None
+        add_bibliography = self._add_bibliography
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
-        dialog = AddBibliographyDialog(self._add_bibliography, all_author_names, self)
+        dialog = AddBibliographyDialog(add_bibliography, all_author_names, self)
         dialog.bibliography_added.connect(self._on_bibliography_added)
         dialog.exec()
 
@@ -275,29 +280,33 @@ class CatalogView(QWidget):
         self.refresh()
 
     def _on_edit_bibliography(self, bibliography_id: int) -> None:
+        assert self._edit_bibliography is not None
+        edit_bibliography = self._edit_bibliography
         entry = self._entry_by_id(bibliography_id)
         if entry is None:
             return
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
         dialog = EditBibliographyDialog(
-            entry, self._edit_bibliography, self._set_bibliography_authors, all_author_names, self
+            entry, edit_bibliography, self._set_bibliography_authors, all_author_names, self
         )
         if not dialog.exec():
             return
         self.refresh()
 
     def _on_add_item(self, bibliography_id: int) -> None:
+        assert self._add_item is not None
         entry = self._entry_by_id(bibliography_id)
         if entry is None:
             return
         try:
-            self._add_item.execute(entry.bibliography.id)
+            self._add_item.execute(require_id(entry.bibliography.id))
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not add item", str(error))
             return
         self.refresh()
 
     def _on_remove_item(self, bibliography_id: int) -> None:
+        assert self._remove_item is not None
         entry = self._entry_by_id(bibliography_id)
         if entry is None:
             return
@@ -306,13 +315,14 @@ class CatalogView(QWidget):
             QMessageBox.warning(self, "Cannot remove item", "No available (non-checked-out) item to remove.")
             return
         try:
-            self._remove_item.execute(removable.id)
+            self._remove_item.execute(require_id(removable.id))
         except BibliosphereError as error:
             QMessageBox.warning(self, "Could not remove item", str(error))
             return
         self.refresh()
 
     def _on_delete_bibliography(self, bibliography_id: int) -> None:
+        assert self._delete_bibliography is not None
         entry = self._entry_by_id(bibliography_id)
         if entry is None:
             return

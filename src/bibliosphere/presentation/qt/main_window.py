@@ -1,3 +1,5 @@
+from typing import Protocol
+
 from PySide6.QtWidgets import QMainWindow, QStackedWidget, QTabWidget, QWidget
 
 from bibliosphere.application.container import UseCases
@@ -7,6 +9,10 @@ from bibliosphere.presentation.qt.checkout_view import CheckoutView
 from bibliosphere.presentation.qt.login_view import LoginView
 from bibliosphere.presentation.qt.member_view import MemberView
 from bibliosphere.presentation.qt.my_loans_view import MyLoansView
+
+
+class _RefreshableTab(Protocol):
+    def refresh(self) -> None: ...
 
 
 class MainWindow(QMainWindow):
@@ -37,6 +43,7 @@ class MainWindow(QMainWindow):
     def _build_dashboard(self, member: Member) -> QWidget:
         tabs = QTabWidget()
         uc = self._use_cases
+        views: list[_RefreshableTab] = []
 
         if member.role is Role.LIBRARIAN:
             catalog = CatalogView(
@@ -50,25 +57,32 @@ class MainWindow(QMainWindow):
                 delete_bibliography=uc.delete_bibliography,
             )
             tabs.addTab(catalog, "Catalog")
+            views.append(catalog)
 
             members = MemberView(uc.list_members, uc.create_member, uc.edit_member, uc.generate_member_id)
             tabs.addTab(members, "Members")
+            views.append(members)
 
             checkout = CheckoutView(
                 uc.search_catalog, uc.list_members, uc.checkout_item, uc.list_open_loans, uc.return_item
             )
             tabs.addTab(checkout, "Checkout / Return")
+            views.append(checkout)
         else:
             catalog = CatalogView(uc.search_catalog)
             tabs.addTab(catalog, "Catalog")
+            views.append(catalog)
 
             my_loans = MyLoansView(uc.list_member_loans, member.id)
             tabs.addTab(my_loans, "My Loans")
+            views.append(my_loans)
 
         # Each tab's own view already refreshes itself on construction; this catches it
         # back up on every subsequent switch, since actions in one tab (e.g. adding a
         # bibliography in Catalog) don't otherwise reach the other tabs' cached state
-        # (e.g. Checkout's bibliography dropdown).
-        tabs.currentChanged.connect(lambda index: tabs.widget(index).refresh())
+        # (e.g. Checkout's bibliography dropdown). Dispatched via `views` (built in the
+        # same order as the tabs above) rather than tabs.widget(index), since QTabWidget
+        # only knows its children as plain QWidget and has no notion of "refreshable".
+        tabs.currentChanged.connect(lambda index: views[index].refresh())
 
         return tabs

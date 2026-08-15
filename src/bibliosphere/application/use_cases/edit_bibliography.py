@@ -5,6 +5,7 @@ from bibliosphere.domain.exceptions import (
     DuplicateIsbn,
     InvalidBibliographyDetails,
 )
+from bibliosphere.domain.ids import require_id
 from bibliosphere.domain.ports import AuthorRepository, BibliographyRepository, UnitOfWork
 
 
@@ -82,7 +83,7 @@ class EditBibliography:
             self._bibliographies.update(updated)
 
             unique_authors = list(dict.fromkeys(authors))
-            author_ids = [self._authors.find_or_create_by_name(name).id for name in unique_authors]
+            author_ids = [require_id(self._authors.find_or_create_by_name(name).id) for name in unique_authors]
             self._bibliographies.set_authors(bibliography_id, author_ids)
 
         return updated

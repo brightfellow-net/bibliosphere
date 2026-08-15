@@ -24,13 +24,13 @@ class ManageAuthorsDialog(QDialog):
         self,
         bibliography_title: str,
         initial_authors: list[str],
-        all_author_names: list[str] = (),
+        all_author_names: list[str] | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle(f"Manage Authors — {bibliography_title}" if bibliography_title else "Manage Authors")
         self.resize(420, 320)
-        self._all_author_names = list(all_author_names)
+        self._all_author_names = list(all_author_names or [])
 
         self._list = QListWidget()
         for name in initial_authors:
