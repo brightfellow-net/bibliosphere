@@ -1,4 +1,4 @@
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -28,14 +28,12 @@ from bibliosphere.presentation.qt.add_bibliography_dialog import AddBibliography
 from bibliosphere.presentation.qt.edit_bibliography_dialog import EditBibliographyDialog
 
 _COLUMN_LABELS = ["Call Number", "Title", "Series Title", "Authors", "ISBN", "Edition", "Publish Year", "Available"]
-# Parallel to _COLUMN_LABELS: initial widths (px) users can then drag to resize. Series
-# Title's entry is a placeholder — it's the designated "filler" column (see
-# _rebalance_filler_column), so its actual width always fills whatever space the others
-# don't use, ignoring this value. It's the filler rather than Title so Title itself
-# stays draggable like every other column.
+# Parallel to _COLUMN_LABELS: initial widths (px), user-draggable from there.
 _DEFAULT_COLUMN_WIDTHS = [110, 260, 140, 160, 110, 90, 90, 80]
-_FILLER_COLUMN = _COLUMN_LABELS.index("Series Title")
-_MIN_FILLER_WIDTH = 60
+# Call Number and Title stay on screen while the rest of the table scrolls
+# horizontally underneath (see _frozen_table below) — this is how many leading
+# columns that covers.
+_FROZEN_COLUMN_COUNT = 2
 
 
 class CatalogView(QWidget):
@@ -79,20 +77,6 @@ class CatalogView(QWidget):
         )
         column_labels = [*_COLUMN_LABELS, "Action"] if self._show_actions else list(_COLUMN_LABELS)
 
-        self._column_filters: list[QLineEdit] = []
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(0)
-        filter_row.setContentsMargins(0, 0, 0, 0)
-        for label in column_labels:
-            filter_box = QLineEdit()
-            if label == "Action":
-                filter_box.setEnabled(False)
-            else:
-                filter_box.setPlaceholderText(f"Filter {label}...")
-                filter_box.textChanged.connect(self._apply_filters)
-            self._column_filters.append(filter_box)
-            filter_row.addWidget(filter_box)
-
         self._table = QTableWidget(0, len(column_labels))
         self._table.setHorizontalHeaderLabels(column_labels)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -103,16 +87,11 @@ class CatalogView(QWidget):
         self._table.verticalHeader().setVisible(False)
         # Interactive (not Stretch) so users can drag column borders to resize; initial
         # widths are set explicitly below since Interactive columns don't auto-size.
+        # Every column (Call Number/Title included) keeps this mode: with nothing
+        # forcing columns to shrink to the viewport width, Qt's default
+        # ScrollBarAsNeeded policy shows a horizontal scrollbar once the real column
+        # widths exceed it, instead of squeezing everything to fit.
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        # Series Title is the one column not user-draggable — its width is instead
-        # recomputed in _rebalance_filler_column() to absorb whatever space the other
-        # (fixed-until-dragged) columns don't use, so the columns always fill the
-        # table's width with no dead space or horizontal scrollbar. This is handled by
-        # hand rather than via Qt's own Stretch resize mode: mixing Stretch with
-        # Interactive columns relies on Qt to redistribute the Stretch section whenever
-        # any other section resizes, which turned out not to happen reliably (e.g. a
-        # window at a fixed size, so no resize event of its own reaches the header).
-        self._table.horizontalHeader().setSectionResizeMode(_FILLER_COLUMN, QHeaderView.ResizeMode.Fixed)
         if self._show_actions:
             # Fixed to fit its buttons, unlike the data columns — leaving it Interactive
             # would let a user drag it down to unreadable fragments.
@@ -120,18 +99,99 @@ class CatalogView(QWidget):
                 len(column_labels) - 1, QHeaderView.ResizeMode.ResizeToContents
             )
         self._table.setSortingEnabled(True)
-        # The filter row is a separate QHBoxLayout, not part of the table itself (a
-        # table row can't be pinned above the sortable ones), so its boxes' widths are
-        # kept in lockstep with the actual column widths here instead of relying on
-        # both layouts happening to divide up space the same way. Connected before the
-        # initial setColumnWidth() calls below so those are picked up too.
-        self._table.horizontalHeader().sectionResized.connect(self._on_column_resized)
+        # Default scroll mode is per-item (the horizontal scrollbar's value would be a
+        # column index, not a pixel offset), which both makes for chunky horizontal
+        # scrolling and breaks the pixel-for-pixel offset _on_table_hscroll relies on
+        # to keep the non-frozen filter boxes lined up with their columns.
+        self._table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         for column, width in enumerate(_DEFAULT_COLUMN_WIDTHS):
-            if column != _FILLER_COLUMN:
-                self._table.setColumnWidth(column, width)
+            self._table.setColumnWidth(column, width)
+
+        # Second table overlaid on top of _table's own Call Number/Title columns
+        # (which stay in place underneath, just visually covered) — QTableWidget has
+        # no built-in frozen-column support, so this mirrors Qt's own "frozen column"
+        # pattern by hand: a second view showing just the columns to freeze, scroll-
+        # synced to the real one. See _update_frozen_table_geometry and the sync
+        # methods wired up below for how the two are kept in lockstep.
+        self._frozen_table = QTableWidget(0, _FROZEN_COLUMN_COUNT, self._table)
+        self._frozen_table.setHorizontalHeaderLabels(column_labels[:_FROZEN_COLUMN_COUNT])
+        self._frozen_table.verticalHeader().setVisible(False)
+        self._frozen_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self._frozen_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._frozen_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._frozen_table.setFrameShape(QTableWidget.Shape.NoFrame)
+        self._frozen_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._frozen_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Must match _table's vertical scroll mode (both per-pixel) for the two
+        # scrollbars' values to mean the same thing when synced 1:1 below.
+        self._frozen_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._frozen_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        for column in range(_FROZEN_COLUMN_COUNT):
+            self._frozen_table.setColumnWidth(column, _DEFAULT_COLUMN_WIDTHS[column])
+        # _frozen_table's header visually replaces _table's for these columns (it's
+        # drawn on top), so it needs its own click-to-sort — but it must never sort
+        # itself independently of _table (that would desync row order between the
+        # two), so a click here just forwards to _table's real sort indicator instead.
+        self._frozen_table.horizontalHeader().setSectionsClickable(True)
+
+        self._column_filters: list[QLineEdit] = []
+        # The filter row can't be a real table row pinned above the sortable ones, so
+        # it's built separately here — but split to match the table above it: a fixed
+        # panel for Call Number/Title's filters (over _frozen_table) and a clipped,
+        # horizontally-scrolled panel for the rest (over _table), see
+        # _update_filter_bar_geometry and _on_table_hscroll.
+        self._filter_bar = QWidget()
+        self._frozen_filter_container = QWidget(self._filter_bar)
+        frozen_filter_layout = QHBoxLayout(self._frozen_filter_container)
+        frozen_filter_layout.setSpacing(0)
+        frozen_filter_layout.setContentsMargins(0, 0, 0, 0)
+        self._scroll_filter_clip = QWidget(self._filter_bar)
+        self._scroll_filter_inner = QWidget(self._scroll_filter_clip)
+        scroll_filter_layout = QHBoxLayout(self._scroll_filter_inner)
+        scroll_filter_layout.setSpacing(0)
+        scroll_filter_layout.setContentsMargins(0, 0, 0, 0)
+        for index, label in enumerate(column_labels):
+            filter_box = QLineEdit()
+            if label == "Action":
+                filter_box.setEnabled(False)
+            else:
+                filter_box.setPlaceholderText(f"Filter {label}...")
+                filter_box.textChanged.connect(self._apply_filters)
+            self._column_filters.append(filter_box)
+            if index < _FROZEN_COLUMN_COUNT:
+                frozen_filter_layout.addWidget(filter_box)
+            else:
+                scroll_filter_layout.addWidget(filter_box)
+            filter_box.setFixedWidth(self._table.columnWidth(index))
+        self._filter_bar.setFixedHeight(self._column_filters[0].sizeHint().height())
+
+        # Wired up only now that every widget these handlers touch (_column_filters,
+        # _filter_bar and its children) actually exists — connecting any earlier risks
+        # a handler firing off one of the setColumnWidth() calls above and crashing on
+        # a not-yet-built attribute.
+        self._table.horizontalHeader().sectionResized.connect(self._on_column_resized)
+        self._table.horizontalScrollBar().valueChanged.connect(self._on_table_hscroll)
+        self._frozen_table.horizontalHeader().sectionClicked.connect(self._on_frozen_header_clicked)
+        # Dragging Call Number/Title now has to happen on the (visible) frozen
+        # header — mirror the new width onto _table's hidden-underneath column so its
+        # total content width (and therefore its horizontal scrollbar range) stays
+        # correct, and re-settle both overlays' geometry.
+        self._frozen_table.horizontalHeader().sectionResized.connect(self._on_frozen_column_resized)
+        # A header click (native, for columns 2+, or forwarded from _frozen_table's
+        # header for 0/1 via _on_frozen_header_clicked above) reorders _table's rows
+        # in place without going through _apply_filters, so _frozen_table needs an
+        # explicit resync afterward. Note this has to be the *model's* layoutChanged,
+        # not the header's sortIndicatorChanged: the indicator signal fires before the
+        # actual row reorder happens (confirmed empirically — connecting there copied
+        # stale, pre-sort data into _frozen_table), whereas layoutChanged fires once
+        # the reorder is actually done.
+        self._table.model().layoutChanged.connect(self._on_table_sorted)
+        self._table.verticalScrollBar().valueChanged.connect(self._frozen_table.verticalScrollBar().setValue)
+        self._frozen_table.verticalScrollBar().valueChanged.connect(self._table.verticalScrollBar().setValue)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(filter_row)
+        layout.addWidget(self._filter_bar)
         layout.addWidget(self._table)
 
         if add_bibliography is not None:
@@ -145,48 +205,87 @@ class CatalogView(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        # Otherwise resizing the window leaves Series Title at its old width instead of
-        # absorbing/releasing the newly available space, the way the rest of the
-        # columns filling the table depends on.
-        self._rebalance_filler_column()
+        self._update_frozen_table_geometry()
+        self._update_filter_bar_geometry()
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        # The very first rebalance (during __init__, via refresh()) runs before this
-        # widget has real on-screen geometry, and before the Action column's
+        # The very first geometry pass (during __init__, via refresh()) runs before
+        # this widget has real on-screen geometry, and before the Action column's
         # ResizeToContents width has settled to fit its buttons — both only become
         # final once the widget is actually shown, so it needs to happen once more here.
-        self._rebalance_filler_column()
+        self._update_frozen_table_geometry()
+        self._update_filter_bar_geometry()
 
     def minimumSizeHint(self) -> QSize:
         # Otherwise this propagates all the way up to the top-level window's minimum
-        # size: _sync_filter_column_widths uses setFixedWidth() to keep a filter box
-        # exactly as wide as its column, and setFixedWidth() pins that box's *minimum*
-        # width too — so dragging a column wide enough would otherwise force the window
-        # to grow past the screen size, unable to be maximized/restored afterward. A
+        # size: the filter boxes' setFixedWidth() calls pin their *minimum* width too
+        # — so dragging a column wide enough would otherwise force the window to grow
+        # past the screen size, unable to be maximized/restored afterward. A
         # QAbstractScrollArea like the table already overrides this the same way, which
         # is why only the filter row needed it here.
         return QSize(200, 150)
 
+    def _update_frozen_table_geometry(self) -> None:
+        frozen_width = sum(self._table.columnWidth(i) for i in range(_FROZEN_COLUMN_COUNT))
+        self._frozen_table.setGeometry(
+            self._table.frameWidth(),
+            self._table.frameWidth(),
+            frozen_width,
+            self._table.viewport().height() + self._table.horizontalHeader().height(),
+        )
+
+    def _update_filter_bar_geometry(self) -> None:
+        frozen_width = sum(self._table.columnWidth(i) for i in range(_FROZEN_COLUMN_COUNT))
+        bar_height = self._filter_bar.height()
+        self._frozen_filter_container.setGeometry(0, 0, frozen_width, bar_height)
+        self._scroll_filter_clip.setGeometry(
+            frozen_width, 0, max(0, self._filter_bar.width() - frozen_width), bar_height
+        )
+        self._scroll_filter_inner.resize(self._scroll_filter_inner.sizeHint().width(), bar_height)
+        self._on_table_hscroll(self._table.horizontalScrollBar().value())
+
+    def _on_table_hscroll(self, value: int) -> None:
+        # Keeps the non-frozen filter boxes lined up with the columns they filter as
+        # _table scrolls horizontally underneath them — same pixel units (column
+        # widths) on both sides, so no offset math is needed beyond the raw value.
+        self._scroll_filter_inner.move(-value, 0)
+
+    def _on_frozen_header_clicked(self, column: int) -> None:
+        header = self._table.horizontalHeader()
+        already_ascending = (
+            header.sortIndicatorSection() == column
+            and header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
+        )
+        order = Qt.SortOrder.DescendingOrder if already_ascending else Qt.SortOrder.AscendingOrder
+        # _table has setSortingEnabled(True), which is what makes changing its sort
+        # indicator (rather than calling sortItems() directly) actually perform the
+        # sort — the same mechanism a real click on one of its own headers uses.
+        header.setSortIndicator(column, order)
+
+    def _on_frozen_column_resized(self, index: int, old_size: int, new_size: int) -> None:
+        self._table.setColumnWidth(index, new_size)
+        self._sync_filter_column_width(index, new_size)
+        self._update_frozen_table_geometry()
+        self._update_filter_bar_geometry()
+
+    def _on_table_sorted(self) -> None:
+        self._sync_frozen_rows()
+
+    def _sync_frozen_rows(self) -> None:
+        self._frozen_table.setRowCount(self._table.rowCount())
+        for row in range(self._table.rowCount()):
+            for column in range(_FROZEN_COLUMN_COUNT):
+                item = self._table.item(row, column)
+                text = item.text() if item is not None else ""
+                self._frozen_table.setItem(row, column, QTableWidgetItem(text))
+
     def _on_column_resized(self, index: int, old_size: int, new_size: int) -> None:
         self._sync_filter_column_width(index, new_size)
-        if index != _FILLER_COLUMN:
-            self._rebalance_filler_column()
 
     def _sync_filter_column_width(self, index: int, new_size: int) -> None:
         if 0 <= index < len(self._column_filters):
             self._column_filters[index].setFixedWidth(new_size)
-
-    def _rebalance_filler_column(self) -> None:
-        fixed_total = sum(
-            self._table.columnWidth(i) for i in range(self._table.columnCount()) if i != _FILLER_COLUMN
-        )
-        available = max(_MIN_FILLER_WIDTH, self._table.viewport().width() - fixed_total)
-        if available != self._table.columnWidth(_FILLER_COLUMN):
-            # sectionResized (and so _on_column_resized) fires from this in turn, but
-            # only syncs that column's filter box — it's excluded from triggering
-            # another rebalance above, so this can't recurse.
-            self._table.setColumnWidth(_FILLER_COLUMN, available)
 
     def refresh(self) -> None:
         self._entries = self._search_catalog.execute("")
@@ -201,13 +300,20 @@ class CatalogView(QWidget):
         # cells across the wrong positions mid-insert.
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(matching))
+        self._frozen_table.setRowCount(len(matching))
         for row, entry in enumerate(matching):
             self._set_row(row, entry)
         self._table.setSortingEnabled(True)
+        # Re-enabling sorting can itself reorder rows immediately (if a sort indicator
+        # was already active from an earlier click) without necessarily emitting
+        # sortIndicatorChanged — so _sync_frozen_rows is called explicitly here rather
+        # than relied on via that signal, which only covers a later interactive click.
+        self._sync_frozen_rows()
         # Action's ResizeToContents width can only be known once its cell widgets
-        # exist, i.e. after the rows above are populated — so the filler needs to
-        # re-settle afterward too, not just when a data column is dragged.
-        self._rebalance_filler_column()
+        # exist, i.e. after the rows above are populated — so the overlays need to
+        # re-settle afterward too, not just when a column is dragged.
+        self._update_frozen_table_geometry()
+        self._update_filter_bar_geometry()
 
     @staticmethod
     def _matches_filters(entry: CatalogEntry, filters: list[str]) -> bool:
@@ -228,8 +334,11 @@ class CatalogView(QWidget):
         ]
 
     def _set_row(self, row: int, entry: CatalogEntry) -> None:
-        for column, value in enumerate(self._row_values(entry)):
+        values = self._row_values(entry)
+        for column, value in enumerate(values):
             self._table.setItem(row, column, QTableWidgetItem(value))
+        for column in range(_FROZEN_COLUMN_COUNT):
+            self._frozen_table.setItem(row, column, QTableWidgetItem(values[column]))
         if self._show_actions:
             self._table.setCellWidget(
                 row, len(_COLUMN_LABELS), self._make_action_widget(require_id(entry.bibliography.id))
