@@ -21,10 +21,12 @@ from bibliosphere.application.use_cases.list_loan_history import ListLoanHistory
 from bibliosphere.application.use_cases.list_member_loans import ListMemberLoans
 from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
+from bibliosphere.application.use_cases.lookup_book_by_isbn import LookupBookByIsbn
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
+from bibliosphere.infrastructure.openlibrary.book_metadata_provider import OpenLibraryBookMetadataProvider
 from bibliosphere.infrastructure.sqlite.author_repository import SqliteAuthorRepository
 from bibliosphere.infrastructure.sqlite.bibliography_repository import SqliteBibliographyRepository
 from bibliosphere.infrastructure.sqlite.connection import connect, default_db_path, init_schema
@@ -55,6 +57,7 @@ def build_use_cases(db_path: Path) -> UseCases:
         delete_bibliography=DeleteBibliography(bibliographies),
         set_bibliography_authors=SetBibliographyAuthors(bibliographies, authors, bibliography_uow),
         list_authors=ListAuthors(authors),
+        lookup_book_by_isbn=LookupBookByIsbn(OpenLibraryBookMetadataProvider()),
         add_item=AddItem(bibliographies),
         remove_item=RemoveItem(bibliographies, loans),
         list_members=ListMembers(members),

@@ -83,3 +83,11 @@ class LoanNotFound(BibliosphereError):
 
 class LoanAlreadyReturned(BibliosphereError):
     """Raised when attempting to return a loan that has already been returned."""
+
+
+class BookLookupFailed(BibliosphereError):
+    """Raised when the external ISBN lookup could not be completed (e.g. no network)."""
+
+
+class IsbnNotFound(BibliosphereError):
+    """Raised when an ISBN lookup finds no matching book."""

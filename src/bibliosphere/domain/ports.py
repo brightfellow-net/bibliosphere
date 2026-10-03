@@ -9,7 +9,7 @@ standalone master data, so their own CRUD lives on AuthorRepository instead
 (mirroring MemberRepository).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
 
@@ -151,3 +151,20 @@ class UnitOfWork(Protocol):
 
     def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object) -> None: ...
+
+
+@dataclass
+class BookMetadata:
+    """Descriptive fields an external catalog knows about a book, looked up by ISBN."""
+
+    title: str | None = None
+    authors: list[str] = field(default_factory=list)
+    series_title: str | None = None
+    edition: str | None = None
+    publish_year: str | None = None
+
+
+class BookMetadataProvider(Protocol):
+    def fetch_by_isbn(self, isbn: str) -> BookMetadata | None:
+        """Return None if the ISBN is unknown; raise BookLookupFailed if the lookup itself fails."""
+        ...

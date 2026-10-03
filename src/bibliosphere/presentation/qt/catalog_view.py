@@ -20,6 +20,7 @@ from bibliosphere.application.use_cases.add_item import AddItem
 from bibliosphere.application.use_cases.delete_bibliography import DeleteBibliography
 from bibliosphere.application.use_cases.edit_bibliography import EditBibliography
 from bibliosphere.application.use_cases.list_authors import ListAuthors
+from bibliosphere.application.use_cases.lookup_book_by_isbn import LookupBookByIsbn
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
 from bibliosphere.application.use_cases.set_bibliography_authors import SetBibliographyAuthors
@@ -70,6 +71,7 @@ class CatalogView(QWidget):
         edit_bibliography: EditBibliography | None = None,
         set_bibliography_authors: SetBibliographyAuthors | None = None,
         list_authors: ListAuthors | None = None,
+        lookup_book_by_isbn: LookupBookByIsbn | None = None,
         add_item: AddItem | None = None,
         remove_item: RemoveItem | None = None,
         delete_bibliography: DeleteBibliography | None = None,
@@ -81,6 +83,7 @@ class CatalogView(QWidget):
         self._edit_bibliography = edit_bibliography
         self._set_bibliography_authors = set_bibliography_authors
         self._list_authors = list_authors
+        self._lookup_book_by_isbn = lookup_book_by_isbn
         self._add_item = add_item
         self._remove_item = remove_item
         self._delete_bibliography = delete_bibliography
@@ -492,18 +495,14 @@ class CatalogView(QWidget):
         assert self._add_bibliography is not None
         add_bibliography = self._add_bibliography
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
-        dialog = AddBibliographyDialog(add_bibliography, all_author_names, self)
+        dialog = AddBibliographyDialog(add_bibliography, all_author_names, self._lookup_book_by_isbn, self)
         dialog.bibliography_added.connect(self._on_bibliography_added)
         dialog.exec()
 
     def _on_bibliography_added(self) -> None:
-        # Otherwise a leftover filter can hide the just-added bibliography with no
-        # feedback that anything happened, inviting an accidental duplicate re-add.
-        for box in self._column_filters:
-            box.clear()
-        # A freshly added bibliography could sort/page anywhere under the active sort,
-        # so don't leave a stale self._page pointing past where it now lands.
-        self._page = 1
+        # Filters and the current page are deliberately left intact: the librarian's
+        # search context survives adding a bibliography (which may therefore not be
+        # visible if it doesn't match the active filters).
         self.refresh()
 
     def _on_edit_bibliography(self, bibliography_id: int) -> None:
@@ -514,7 +513,12 @@ class CatalogView(QWidget):
             return
         all_author_names = [a.name for a in self._list_authors.execute()] if self._list_authors is not None else []
         dialog = EditBibliographyDialog(
-            entry, edit_bibliography, self._set_bibliography_authors, all_author_names, self
+            entry,
+            edit_bibliography,
+            self._set_bibliography_authors,
+            all_author_names,
+            self._lookup_book_by_isbn,
+            self,
         )
         if not dialog.exec():
             return

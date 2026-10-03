@@ -15,6 +15,7 @@ from bibliosphere.application.use_cases.list_loan_history import ListLoanHistory
 from bibliosphere.application.use_cases.list_member_loans import ListMemberLoans
 from bibliosphere.application.use_cases.list_members import ListMembers
 from bibliosphere.application.use_cases.list_open_loans import ListOpenLoans
+from bibliosphere.application.use_cases.lookup_book_by_isbn import LookupBookByIsbn
 from bibliosphere.application.use_cases.remove_item import RemoveItem
 from bibliosphere.application.use_cases.return_item import ReturnItem
 from bibliosphere.application.use_cases.search_catalog import SearchCatalog
@@ -36,6 +37,7 @@ class UseCases:
     delete_bibliography: DeleteBibliography
     set_bibliography_authors: SetBibliographyAuthors
     list_authors: ListAuthors
+    lookup_book_by_isbn: LookupBookByIsbn
     add_item: AddItem
     remove_item: RemoveItem
     list_members: ListMembers
