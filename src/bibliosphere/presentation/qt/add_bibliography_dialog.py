@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
 )
 
 from bibliosphere.application.use_cases.add_bibliography import AddBibliography
+from bibliosphere.application.use_cases.lookup_book_by_isbn import LookupBookByIsbn
 from bibliosphere.domain.exceptions import BibliosphereError
+from bibliosphere.domain.ports import BookMetadata
+from bibliosphere.presentation.qt.isbn_lookup_field import IsbnLookupField
 from bibliosphere.presentation.qt.manage_authors_dialog import ManageAuthorsDialog
 
 
@@ -35,6 +38,7 @@ class AddBibliographyDialog(QDialog):
         self,
         add_bibliography: AddBibliography,
         all_author_names: list[str] | None = None,
+        lookup_book_by_isbn: LookupBookByIsbn | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -46,7 +50,10 @@ class AddBibliographyDialog(QDialog):
 
         self._call_number = QLineEdit()
         self._title = QLineEdit()
-        self._isbn = QLineEdit()
+        self._isbn_field = IsbnLookupField(lookup_book_by_isbn)
+        self._isbn = self._isbn_field.line_edit
+        self._isbn_field.book_loaded.connect(self._on_book_loaded)
+        self._isbn_field.lookup_failed.connect(lambda message: self._set_status(message, is_error=True))
         self._series_title = QLineEdit()
         self._edition = QLineEdit()
         self._publish_year = QLineEdit()
@@ -57,7 +64,7 @@ class AddBibliographyDialog(QDialog):
         form = QFormLayout()
         form.addRow("Call Number:", self._call_number)
         form.addRow("Title:", self._title)
-        form.addRow("ISBN/ISSN:", self._isbn)
+        form.addRow("ISBN/ISSN:", self._isbn_field)
         form.addRow("Series Title:", self._series_title)
         form.addRow("Edition:", self._edition)
         form.addRow("Publish Year:", self._publish_year)
@@ -103,6 +110,22 @@ class AddBibliographyDialog(QDialog):
             return
         self._authors = dialog.values()
         self._update_authors_label()
+
+    def _on_book_loaded(self, metadata: BookMetadata) -> None:
+        # Only overwrite fields the lookup actually returned, so a sparse result can't
+        # blank out what the librarian already typed.
+        if metadata.title:
+            self._title.setText(metadata.title)
+        if metadata.series_title:
+            self._series_title.setText(metadata.series_title)
+        if metadata.edition:
+            self._edition.setText(metadata.edition)
+        if metadata.publish_year:
+            self._publish_year.setText(metadata.publish_year)
+        if metadata.authors:
+            self._authors = list(metadata.authors)
+            self._update_authors_label()
+        self._set_status("Book information loaded. Review it, then fill in the call number.", is_error=False)
 
     def _on_ok_clicked(self) -> None:
         try:

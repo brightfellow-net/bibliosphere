@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
                 edit_bibliography=uc.edit_bibliography,
                 set_bibliography_authors=uc.set_bibliography_authors,
                 list_authors=uc.list_authors,
+                lookup_book_by_isbn=uc.lookup_book_by_isbn,
                 add_item=uc.add_item,
                 remove_item=uc.remove_item,
                 delete_bibliography=uc.delete_bibliography,
